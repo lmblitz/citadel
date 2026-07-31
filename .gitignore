@@ -4,3 +4,4 @@ __pycache__/
 .env.example
 tournaments.json
 warnings.json
+automod.json
