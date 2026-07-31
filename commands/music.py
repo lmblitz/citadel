@@ -113,6 +113,8 @@ class Music(commands.Cog):
             "format": "bestaudio/best",
             "quiet": True,
             "noplaylist": True,
+            "js_runtimes": {"deno": {}, "node": {}},
+            "remote_components": ["ejs:github"],
         }
         try:
             with yt_dlp.YoutubeDL(options) as ydl:
@@ -129,6 +131,30 @@ class Music(commands.Cog):
                 }
         except Exception:
             return None
+
+    def _search(self, query):
+        options = {
+            "quiet": True,
+            "noplaylist": True,
+            "extract_flat": True,
+            "js_runtimes": {"deno": {}, "node": {}},
+            "remote_components": ["ejs:github"],
+        }
+        try:
+            with yt_dlp.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(f"ytsearch25:{query}", download=False)
+                results = []
+                for entry in info.get("entries", []):
+                    if entry and entry.get("title"):
+                        results.append(
+                            {
+                                "title": entry.get("title"),
+                                "webpage_url": entry.get("webpage_url"),
+                            }
+                        )
+                return results
+        except Exception:
+            return []
 
     def _track_embed(self, track, volume=None):
         embed = discord.Embed(
@@ -320,6 +346,24 @@ class Music(commands.Cog):
                 f"Now playing **{track['title']}**.",
                 ephemeral=True,
             )
+
+    @play.autocomplete("query")
+    async def play_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ):
+        if not current or len(current) < 2:
+            return []
+
+        results = await asyncio.to_thread(self._search, current)
+        return [
+            app_commands.Choice(
+                name=result["title"][:100],
+                value=result["webpage_url"],
+            )
+            for result in results[:25]
+        ]
 
     @commands.hybrid_command(
         name="skip",
