@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 import discord
 import yt_dlp
@@ -80,6 +81,7 @@ class Music(commands.Cog):
         self._volumes = {}
         self._panels = {}
         self._panel_locs = {}
+        self._search_cache = {}
 
     @staticmethod
     def _ffmpeg():
@@ -137,19 +139,19 @@ class Music(commands.Cog):
             "quiet": True,
             "noplaylist": True,
             "extract_flat": True,
-            "js_runtimes": {"deno": {}, "node": {}},
-            "remote_components": ["ejs:github"],
         }
         try:
             with yt_dlp.YoutubeDL(options) as ydl:
-                info = ydl.extract_info(f"ytsearch25:{query}", download=False)
+                info = ydl.extract_info(f"ytsearch10:{query}", download=False)
                 results = []
                 for entry in info.get("entries", []):
-                    if entry and entry.get("title"):
+                    if entry and entry.get("title") and entry.get("id"):
                         results.append(
                             {
                                 "title": entry.get("title"),
-                                "webpage_url": entry.get("webpage_url"),
+                                "webpage_url": (
+                                    f"https://www.youtube.com/watch?v={entry['id']}"
+                                ),
                             }
                         )
                 return results
@@ -356,14 +358,25 @@ class Music(commands.Cog):
         if not current or len(current) < 2:
             return []
 
-        results = await asyncio.to_thread(self._search, current)
-        return [
-            app_commands.Choice(
-                name=result["title"][:100],
-                value=result["webpage_url"],
-            )
-            for result in results[:25]
-        ]
+        key = current.strip().lower()
+        cached = self._search_cache.get(key)
+        if cached and cached[0] > time.time():
+            return cached[1]
+
+        try:
+            results = await asyncio.to_thread(self._search, current)
+            choices = [
+                app_commands.Choice(
+                    name=result["title"][:100],
+                    value=result["webpage_url"],
+                )
+                for result in results
+            ][:25]
+        except Exception:
+            return []
+
+        self._search_cache[key] = (time.time() + 30, choices)
+        return choices
 
     @commands.hybrid_command(
         name="skip",
