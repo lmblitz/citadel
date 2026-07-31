@@ -11,10 +11,6 @@ STAFF_ROLES = [
 ]
 
 
-# ==========================
-# TOURNAMENT VIEW
-# ==========================
-
 class TournamentView(discord.ui.View):
 
     def __init__(self, games):
@@ -31,10 +27,6 @@ class TournamentView(discord.ui.View):
                 )
             )
 
-
-# ==========================
-# TOURNAMENT BUTTONS
-# ==========================
 
 class TournamentButton(discord.ui.Button):
 
@@ -148,9 +140,6 @@ Voting Open
 
 
 
-# ==========================
-# COMMAND
-# ==========================
 
 
 class Tournament(commands.Cog):
