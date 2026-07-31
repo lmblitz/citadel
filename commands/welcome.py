@@ -77,32 +77,6 @@ class Welcome(commands.Cog):
 
         await self._send_welcome(channel, member, member.guild)
 
-    @commands.command(
-        name="welcome",
-        description="Preview the welcome message in your DMs."
-    )
-    async def welcome(self, ctx: commands.Context):
-        if ctx.guild is None:
-            return await ctx.send(
-                "This command can only be used in a server."
-            )
-
-        try:
-            await ctx.author.send(
-                content=f"{ctx.author.mention}",
-                embed=self._welcome_embed(ctx.author, ctx.guild),
-            )
-        except discord.Forbidden:
-            return await ctx.send(
-                "I couldn't DM you. Check your privacy settings."
-            )
-        except discord.HTTPException:
-            return await ctx.send(
-                "Failed to send the preview."
-            )
-
-        await ctx.send("Check your DMs!")
-
 
 async def setup(bot):
     await bot.add_cog(Welcome(bot))

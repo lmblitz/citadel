@@ -1,2 +1,5 @@
 discord.py>=2.7.1
 python-dotenv>=1.0.0
+yt-dlp>=2024.08.06
+PyNaCl>=1.6.0
+imageio-ffmpeg>=0.6.0
