@@ -158,10 +158,21 @@ def _sysinfo():
     return info
 
 
+GUILD_ID = 1532560145895395398
+
+
+def _guild(bot):
+    guild = bot.get_guild(GUILD_ID)
+    if guild is None:
+        raise LookupError("Bot is not in the target guild.")
+    return guild
+
+
 async def _guild_info(bot):
-    if not bot.guilds:
-        return {"error": "Bot is not in any guilds."}
-    guild = bot.guilds[0]
+    try:
+        guild = _guild(bot)
+    except LookupError as e:
+        return {"error": str(e)}
     return {
         "name": guild.name,
         "id": guild.id,
@@ -174,9 +185,10 @@ async def _guild_info(bot):
 
 
 async def _list_bans(bot):
-    if not bot.guilds:
+    try:
+        guild = _guild(bot)
+    except LookupError:
         return []
-    guild = bot.guilds[0]
     bans = []
     async for entry in guild.bans(limit=None):
         bans.append(
@@ -190,9 +202,10 @@ async def _list_bans(bot):
 
 
 async def _list_members(bot):
-    if not bot.guilds:
+    try:
+        guild = _guild(bot)
+    except LookupError:
         return []
-    guild = bot.guilds[0]
     members = []
     async for m in guild.fetch_members(limit=None):
         members.append(
@@ -423,9 +436,10 @@ async def _api_action(request):
             user_id = int(data.get("user_id", 0))
         except (TypeError, ValueError):
             return web.json_response({"ok": False, "error": "Invalid user id."})
-        if not bot.guilds:
-            return web.json_response({"ok": False, "error": "Bot is not in any guilds."})
-        guild = bot.guilds[0]
+        try:
+            guild = _guild(bot)
+        except LookupError as e:
+            return web.json_response({"ok": False, "error": str(e)})
         try:
             user = await bot.fetch_user(user_id)
             await guild.unban(user, reason="Unbanned from dashboard")
