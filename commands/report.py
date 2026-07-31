@@ -9,7 +9,7 @@ REPORT_CHANNEL = 1532603654618615900
 RESOLVE_ID = "report_resolve"
 DISMISS_ID = "report_dismiss"
 
-REPORTER_ID_RE = re.compile(r"\*\*User ID\*\*\n`(\d+)`")
+REPORTER_ID_RE = re.compile(r"`(\d+)`")
 
 
 def response_embed(description, color):
@@ -269,7 +269,11 @@ class Report(commands.Cog):
                 ephemeral=True
             )
 
-        reported_member = interaction.guild.get_member(user.id)
+        reported_member = None
+        try:
+            reported_member = await interaction.guild.fetch_member(user.id)
+        except discord.HTTPException:
+            pass
 
         embed = discord.Embed(
             title="User Report",
@@ -301,10 +305,7 @@ class Report(commands.Cog):
         embed.add_field(
             name="**Reported User**",
             value=(
-                f"**User**\n{user.mention}\n\n"
-                f"**Username**\n"
-                f"{reported_member.display_name if reported_member else user.name}\n\n"
-                f"**User ID**\n`{user.id}`\n\n"
+                f"{user.mention}\n`{user.id}`\n\n"
                 f"**Account Created**\n"
                 f"<t:{int(user.created_at.timestamp())}:F>\n\n"
                 f"**Joined Server**\n"
@@ -318,9 +319,7 @@ class Report(commands.Cog):
         embed.add_field(
             name="**Reporter**",
             value=(
-                f"**User**\n{interaction.user.mention}\n\n"
-                f"**Username**\n{interaction.user.display_name}\n\n"
-                f"**User ID**\n`{interaction.user.id}`\n\n"
+                f"{interaction.user.mention}\n`{interaction.user.id}`\n\n"
                 f"**Account Created**\n"
                 f"<t:{int(interaction.user.created_at.timestamp())}:F>\n\n"
                 f"**Joined Server**\n"
