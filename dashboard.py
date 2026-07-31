@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import secrets
+import shutil
 import sys
 import time
 from collections import deque
@@ -9,6 +10,7 @@ from datetime import datetime, timezone
 
 import discord
 from aiohttp import web
+from discord.ext import commands
 
 STARTED = time.time()
 
@@ -41,6 +43,32 @@ class _LogHandler(logging.Handler):
             pass
 
 
+class _Tee:
+    def __init__(self, original):
+        self.original = original
+
+    def write(self, text):
+        try:
+            if text.strip():
+                LOGS.append(
+                    {
+                        "time": time.strftime("%H:%M:%S"),
+                        "level": "CONSOLE",
+                        "logger": "console",
+                        "msg": text.rstrip(),
+                    }
+                )
+        except Exception:
+            pass
+        return self.original.write(text)
+
+    def flush(self):
+        try:
+            self.original.flush()
+        except Exception:
+            pass
+
+
 def _wire_logging():
     global _LOG_HANDLER
     if _LOG_HANDLER is None:
@@ -61,6 +89,121 @@ def _read_files():
         except Exception:
             pass
     return files
+
+
+def _fmt_bytes(n):
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            return f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} TB"
+
+
+def _sysinfo():
+    info = {
+        "platform": sys.platform,
+        "python": sys.version.split()[0],
+        "cwd": os.getcwd(),
+        "host_uptime": None,
+        "loadavg": None,
+        "memory": None,
+        "disk": None,
+        "files": [],
+    }
+    try:
+        with open("/proc/uptime") as f:
+            up = int(float(f.read().split()[0]))
+        info["host_uptime"] = (
+            f"{up // 86400}d {up % 86400 // 3600}h {up % 3600 // 60}m"
+        )
+    except Exception:
+        pass
+    try:
+        with open("/proc/loadavg") as f:
+            info["loadavg"] = f.read().split()[:3]
+    except Exception:
+        pass
+    try:
+        with open("/proc/meminfo") as f:
+            mem = {}
+            for line in f.read().splitlines()[:3]:
+                key, _, val = line.partition(":")
+                mem[key] = int(val.strip().split()[0]) // 1024
+        info["memory"] = mem
+    except Exception:
+        pass
+    try:
+        usage = shutil.disk_usage(os.getcwd())
+        info["disk"] = {
+            "total": _fmt_bytes(usage.total),
+            "used": _fmt_bytes(usage.used),
+            "free": _fmt_bytes(usage.free),
+        }
+    except Exception:
+        pass
+    try:
+        for name in sorted(os.listdir(os.getcwd())):
+            if name.startswith("."):
+                continue
+            path = os.path.join(os.getcwd(), name)
+            info["files"].append(
+                {
+                    "name": name,
+                    "size": _fmt_bytes(os.path.getsize(path)) if os.path.isfile(path) else None,
+                    "dir": os.path.isdir(path),
+                }
+            )
+    except Exception:
+        pass
+    return info
+
+
+async def _guild_info(bot):
+    if not bot.guilds:
+        return {"error": "Bot is not in any guilds."}
+    guild = bot.guilds[0]
+    return {
+        "name": guild.name,
+        "id": guild.id,
+        "owner": str(guild.owner) if guild.owner else "?",
+        "members": guild.member_count or 0,
+        "roles": len(guild.roles),
+        "channels": len(guild.channels),
+        "created": guild.created_at.strftime("%Y-%m-%d"),
+    }
+
+
+async def _list_bans(bot):
+    if not bot.guilds:
+        return []
+    guild = bot.guilds[0]
+    bans = []
+    async for entry in guild.bans(limit=None):
+        bans.append(
+            {
+                "id": entry.user.id,
+                "name": str(entry.user),
+                "reason": entry.reason,
+            }
+        )
+    return bans
+
+
+async def _list_members(bot):
+    if not bot.guilds:
+        return []
+    guild = bot.guilds[0]
+    members = []
+    async for m in guild.fetch_members(limit=None):
+        members.append(
+            {
+                "id": m.id,
+                "name": str(m),
+                "bot": m.bot,
+                "status": str(m.status),
+            }
+        )
+    return members
 
 
 async def _on_command(ctx):
@@ -93,6 +236,27 @@ class _FakeMessage:
         return None
 
 
+class _CaptureContext(commands.Context):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._captured = []
+
+    async def send(self, content=None, *, embed=None, embeds=None, **kwargs):
+        out = []
+        if content:
+            out.append(str(content))
+        for e in ([embed] if embed else []) + (embeds or []):
+            if e:
+                title = e.title or ""
+                desc = e.description or ""
+                out.append((title + "\n" if title else "") + desc)
+        if out:
+            self._captured.append("\n".join(out))
+        if self._echo:
+            await super().send(content=content, embed=embed, embeds=embeds, **kwargs)
+        return None
+
+
 async def _run_command(bot, text):
     text = (text or "").strip()
     if not text:
@@ -103,28 +267,47 @@ async def _run_command(bot, text):
     except ValueError:
         channel_id = 0
         owner_id = 0
-    channel = bot.get_channel(channel_id) if channel_id else None
-    if channel is None:
+    if not channel_id:
         return {
             "ok": False,
             "error": "Set DASHBOARD_CHANNEL_ID to a valid channel to use Run Command.",
         }
-    author = channel.guild.get_member(owner_id) if owner_id else None
-    if author is None:
+    if not owner_id:
         return {
             "ok": False,
             "error": "Set DASHBOARD_OWNER_ID to your user id so commands run as you.",
         }
+    try:
+        channel = await bot.fetch_channel(channel_id)
+    except Exception:
+        return {
+            "ok": False,
+            "error": "Could not find the channel for DASHBOARD_CHANNEL_ID.",
+        }
+    try:
+        author = await channel.guild.fetch_member(owner_id)
+    except discord.HTTPException:
+        return {
+            "ok": False,
+            "error": "DASHBOARD_OWNER_ID is not a member of that guild.",
+        }
     fake = _FakeMessage(bot, channel, author, text)
-    ctx = await bot.get_context(fake)
+    ctx = await bot.get_context(fake, cls=_CaptureContext)
     if ctx.command is None:
         return {"ok": False, "error": f"Unknown command: {text.split()[0]}."}
-    await bot.invoke(ctx)
-    return {
-        "ok": True,
-        "command": text,
-        "result": "Executed — check the configured channel for the reply.",
-    }
+    ctx._echo = os.getenv("DASHBOARD_ECHO", "").lower() in ("1", "true", "yes")
+    try:
+        await ctx.command.invoke(ctx)
+        output = "\n".join(ctx._captured) or "(no output)"
+        return {"ok": True, "command": text, "result": output}
+    except commands.CommandError as e:
+        return {"ok": False, "command": text, "error": str(e)}
+    except Exception as e:
+        return {
+            "ok": False,
+            "command": text,
+            "error": f"{type(e).__name__}: {e}",
+        }
 
 
 def _exec_self():
@@ -188,6 +371,33 @@ async def _api_data(request):
     return web.json_response({"ok": True, "files": _read_files()})
 
 
+async def _api_server(request):
+    if not _authed(request):
+        return web.json_response({"ok": False, "error": "Unauthorized"}, status=401)
+    bot = request.app["bot"]
+    return web.json_response(
+        {
+            "ok": True,
+            "system": _sysinfo(),
+            "guild": await _guild_info(bot),
+        }
+    )
+
+
+async def _api_bans(request):
+    if not _authed(request):
+        return web.json_response({"ok": False, "error": "Unauthorized"}, status=401)
+    return web.json_response({"ok": True, "bans": await _list_bans(request.app["bot"])})
+
+
+async def _api_members(request):
+    if not _authed(request):
+        return web.json_response({"ok": False, "error": "Unauthorized"}, status=401)
+    return web.json_response(
+        {"ok": True, "members": await _list_members(request.app["bot"])}
+    )
+
+
 async def _api_action(request):
     if not _authed(request):
         return web.json_response({"ok": False, "error": "Unauthorized"}, status=401)
@@ -208,6 +418,20 @@ async def _api_action(request):
     if action == "run":
         result = await _run_command(bot, str(data.get("command", "")))
         return web.json_response(result)
+    if action == "unban":
+        try:
+            user_id = int(data.get("user_id", 0))
+        except (TypeError, ValueError):
+            return web.json_response({"ok": False, "error": "Invalid user id."})
+        if not bot.guilds:
+            return web.json_response({"ok": False, "error": "Bot is not in any guilds."})
+        guild = bot.guilds[0]
+        try:
+            user = await bot.fetch_user(user_id)
+            await guild.unban(user, reason="Unbanned from dashboard")
+        except discord.HTTPException as e:
+            return web.json_response({"ok": False, "error": str(e)})
+        return web.json_response({"ok": True, "message": f"Unbanned {user}."})
     return web.json_response({"ok": False, "error": "Unknown action."})
 
 
@@ -222,6 +446,8 @@ async def start(bot):
 
     _wire_logging()
     bot.add_listener(_on_command, "on_command")
+    sys.stdout = _Tee(sys.stdout)
+    sys.stderr = _Tee(sys.stderr)
 
     app = web.Application()
     app["bot"] = bot
@@ -233,6 +459,9 @@ async def start(bot):
     app.router.add_get("/api/status", _api_status)
     app.router.add_get("/api/logs", _api_logs)
     app.router.add_get("/api/data", _api_data)
+    app.router.add_get("/api/server", _api_server)
+    app.router.add_get("/api/bans", _api_bans)
+    app.router.add_get("/api/members", _api_members)
     app.router.add_post("/api/action", _api_action)
 
     runner = web.AppRunner(app)
@@ -281,6 +510,13 @@ main{padding:20px 24px;max-width:1000px}
 .cmd{display:flex;gap:10px;padding:8px 10px;background:#11151b;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;font-size:13px}
 .cmd .n{font-family:ui-monospace,Consolas,monospace;color:var(--acc);font-weight:600}
 .cmd .m{margin-left:auto;color:var(--muted);font-size:12px}
+.row{display:flex;gap:10px;align-items:center;padding:9px 12px;background:#11151b;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;font-size:13px}
+.row .id{color:var(--muted);font-size:11px;font-family:ui-monospace,Consolas,monospace}
+.row .reason{color:var(--warn);font-size:12px;flex:1;overflow-wrap:anywhere}
+.row .meta{color:var(--muted);font-size:12px;margin-left:auto;white-space:nowrap}
+.row button{background:transparent;border:1px solid var(--err);color:var(--err);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}
+.row button:hover{background:var(--err);color:#fff}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid var(--line);color:var(--muted)}
 button.btn{background:var(--acc);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
 button.btn:hover{filter:brightness(1.1)}
 button.btn.danger{background:var(--err)}
@@ -324,8 +560,10 @@ pre{background:#0a0d12;border:1px solid var(--line);border-radius:8px;padding:14
 
 <nav>
   <button data-tab="status" class="active">Status</button>
-  <button data-tab="logs">Logs</button>
-  <button data-tab="commands">Commands</button>
+  <button data-tab="console">Console</button>
+  <button data-tab="server">Server</button>
+  <button data-tab="bans">Bans</button>
+  <button data-tab="members">Members</button>
   <button data-tab="actions">Actions</button>
   <button data-tab="data">Data</button>
 </nav>
@@ -344,17 +582,48 @@ pre{background:#0a0d12;border:1px solid var(--line);border-radius:8px;padding:14
     </div>
   </div>
 
-  <div class="tab" id="tab-logs">
+  <div class="tab" id="tab-console">
     <div class="card">
-      <h3>Live Logs <span style="color:var(--muted)">(auto-refresh)</span></h3>
+      <h3>Console <span style="color:var(--muted)">(bot + hosting output, auto-refresh)</span></h3>
       <div id="logs"></div>
     </div>
   </div>
 
-  <div class="tab" id="tab-commands">
+  <div class="tab" id="tab-server">
+    <div class="grid">
+      <div class="card"><h3>Platform</h3><div class="num" style="font-size:18px" id="sv-platform">-</div></div>
+      <div class="card"><h3>Python</h3><div class="num" style="font-size:18px" id="sv-python">-</div></div>
+      <div class="card"><h3>Host Uptime</h3><div class="num" style="font-size:18px" id="sv-hostup">-</div></div>
+      <div class="card"><h3>Load</h3><div class="num" style="font-size:18px" id="sv-load">-</div></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h3>Memory / Disk</h3>
+      <div id="sv-mem"></div>
+    </div>
+    <div class="grid" style="margin-top:14px">
+      <div class="card"><h3>Guild</h3><div class="num" style="font-size:18px" id="sv-guild">-</div><div class="sub" id="sv-guildsub"></div></div>
+      <div class="card"><h3>Members</h3><div class="num" id="sv-guildmembers">-</div></div>
+      <div class="card"><h3>Roles</h3><div class="num" id="sv-roles">-</div></div>
+      <div class="card"><h3>Channels</h3><div class="num" id="sv-channels">-</div></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h3>Container Files</h3>
+      <div id="sv-files" style="font-family:ui-monospace,Consolas,monospace;font-size:12.5px"></div>
+    </div>
+  </div>
+
+  <div class="tab" id="tab-bans">
     <div class="card">
-      <h3>Recent Commands</h3>
-      <div id="cmdlist"></div>
+      <h3>Bans <span id="bancount" style="color:var(--muted)"></span></h3>
+      <div id="banlist"></div>
+    </div>
+  </div>
+
+  <div class="tab" id="tab-members">
+    <div class="card">
+      <h3>Members <span id="memcount" style="color:var(--muted)"></span></h3>
+      <input type="text" id="memsearch" placeholder="Filter..." style="margin-bottom:12px">
+      <div id="memlist"></div>
     </div>
   </div>
 
@@ -415,6 +684,9 @@ tabs.forEach(t => t.onclick = () => {
   t.classList.add("active");
   document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
   document.getElementById("tab-" + t.dataset.tab).classList.add("active");
+  if (t.dataset.tab === "server") loadServer();
+  if (t.dataset.tab === "bans") loadBans();
+  if (t.dataset.tab === "members") loadMembers();
   if (t.dataset.tab === "data") loadData();
 });
 
@@ -460,6 +732,69 @@ async function loadData() {
       : "(no data files found)";
   } catch (e) {}
 }
+
+async function loadServer() {
+  try {
+    const d = await api("/api/server");
+    const s = d.system;
+    document.getElementById("sv-platform").textContent = s.platform;
+    document.getElementById("sv-python").textContent = s.python;
+    document.getElementById("sv-hostup").textContent = s.host_uptime || "n/a";
+    document.getElementById("sv-load").textContent = s.loadavg ? s.loadavg.join("  ") : "n/a";
+    const mem = document.getElementById("sv-mem");
+    mem.innerHTML = s.memory
+      ? '<div class="row"><span>MemTotal</span><span class="id">' + s.memory.MemTotal + ' MB</span><span class="meta">MemFree ' + s.memory.MemFree + ' MB</span></div>' +
+        (s.disk ? '<div class="row"><span>Disk</span><span class="meta">' + s.disk.used + " used / " + s.disk.free + " free of " + s.disk.total + '</span></div>' : '')
+      : (s.disk ? '<div class="row"><span>Disk</span><span class="meta">' + s.disk.used + " / " + s.disk.total + '</span></div>' : "n/a");
+    const g = d.guild || {};
+    document.getElementById("sv-guild").textContent = g.name || "-";
+    document.getElementById("sv-guildsub").textContent = g.error || ("ID " + (g.id || "?") + " · owner " + (g.owner || "?") + " · created " + (g.created || "?"));
+    document.getElementById("sv-guildmembers").textContent = g.members ?? "-";
+    document.getElementById("sv-roles").textContent = g.roles ?? "-";
+    document.getElementById("sv-channels").textContent = g.channels ?? "-";
+    const files = document.getElementById("sv-files");
+    files.innerHTML = s.files.length
+      ? s.files.map(f => '<div class="row"><span>' + esc(f.dir ? "📁 " : "") + esc(f.name) + '</span><span class="meta">' + (f.dir ? "dir" : f.size) + '</span></div>').join("")
+      : "(empty)";
+  } catch (e) {}
+}
+
+async function loadBans() {
+  try {
+    const d = await api("/api/bans");
+    document.getElementById("bancount").textContent = d.bans.length + " total";
+    const box = document.getElementById("banlist");
+    box.innerHTML = d.bans.length
+      ? d.bans.map(b => '<div class="row"><span>' + esc(b.name) + '</span><span class="id">' + esc(String(b.id)) + '</span><span class="reason">' + esc(b.reason || "no reason") + '</span><button data-uid="' + b.id + '">Unban</button></div>').join("")
+      : "(no bans)";
+    box.querySelectorAll("button").forEach(btn => btn.onclick = async () => {
+      if (!confirm("Unban this user?")) return;
+      const r = await api("/api/action", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "unban", user_id: btn.dataset.uid})});
+      alert(r.message || r.error);
+      if (r.ok) loadBans();
+    });
+  } catch (e) {}
+}
+
+let allMembers = [];
+async function loadMembers() {
+  try {
+    const d = await api("/api/members");
+    allMembers = d.members;
+    renderMembers();
+  } catch (e) {}
+}
+
+function renderMembers() {
+  const q = document.getElementById("memsearch").value.toLowerCase();
+  const list = allMembers.filter(m => !q || m.name.toLowerCase().includes(q));
+  document.getElementById("memcount").textContent = list.length + " of " + allMembers.length;
+  const box = document.getElementById("memlist");
+  box.innerHTML = list.length
+    ? list.map(m => '<div class="row"><span>' + (m.bot ? '<span class="badge">BOT</span> ' : "") + esc(m.name) + '</span><span class="id">' + esc(String(m.id)) + '</span><span class="meta">' + esc(m.status) + '</span></div>').join("")
+    : "(no members)";
+}
+document.getElementById("memsearch").oninput = renderMembers;
 
 function showResult(ok, text) {
   const r = document.getElementById("result");
