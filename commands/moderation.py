@@ -31,21 +31,22 @@ class Moderation(commands.Cog):
         self.bot = bot
 
     @staticmethod
-    def can_act_on(interaction, member):
-        if member == interaction.user:
+    def can_act_on(ctx, member):
+        if member == ctx.author:
             return False, "You can't do that to yourself."
-        if member.id == interaction.guild.owner_id:
+        if member.id == ctx.guild.owner_id:
             return False, "You can't do that to the server owner."
-        if member.top_role >= interaction.user.top_role and interaction.user.id != interaction.guild.owner_id:
+        if member.top_role >= ctx.author.top_role and ctx.author.id != ctx.guild.owner_id:
             return False, "You can't do that to a member with a higher or equal role."
         if member.bot:
             return False, "You can't do that to a bot."
         return True, None
 
-    @app_commands.command(
+    @commands.hybrid_command(
         name="kick",
         description="Kick a member from the server."
     )
+    @commands.has_permissions(kick_members=True)
     @app_commands.default_permissions(kick_members=True)
     @app_commands.describe(
         member="Member to kick.",
@@ -53,35 +54,37 @@ class Moderation(commands.Cog):
     )
     async def kick(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         member: discord.Member,
         reason: str = "No reason provided."
     ):
-        allowed, error = self.can_act_on(interaction, member)
+        allowed, error = self.can_act_on(ctx, member)
         if not allowed:
-            return await interaction.response.send_message(error, ephemeral=True)
+            return await ctx.send(error, ephemeral=True)
 
         try:
             await member.kick(reason=reason)
         except discord.Forbidden:
-            return await interaction.response.send_message(
+            return await ctx.send(
                 "I don't have permission to kick that member.",
                 ephemeral=True
             )
         except discord.HTTPException as e:
-            return await interaction.response.send_message(
+            return await ctx.send(
                 f"Failed to kick: {e}",
                 ephemeral=True
             )
 
-        await interaction.response.send_message(
-            f"**{member}** has been kicked.\nReason: {reason}"
+        await ctx.send(
+            f"**{member}** has been kicked.\nReason: {reason}",
+            ephemeral=True
         )
 
-    @app_commands.command(
+    @commands.hybrid_command(
         name="ban",
         description="Ban a member from the server."
     )
+    @commands.has_permissions(ban_members=True)
     @app_commands.default_permissions(ban_members=True)
     @app_commands.describe(
         member="Member to ban.",
@@ -89,35 +92,37 @@ class Moderation(commands.Cog):
     )
     async def ban(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         member: discord.Member,
         reason: str = "No reason provided."
     ):
-        allowed, error = self.can_act_on(interaction, member)
+        allowed, error = self.can_act_on(ctx, member)
         if not allowed:
-            return await interaction.response.send_message(error, ephemeral=True)
+            return await ctx.send(error, ephemeral=True)
 
         try:
             await member.ban(reason=reason)
         except discord.Forbidden:
-            return await interaction.response.send_message(
+            return await ctx.send(
                 "I don't have permission to ban that member.",
                 ephemeral=True
             )
         except discord.HTTPException as e:
-            return await interaction.response.send_message(
+            return await ctx.send(
                 f"Failed to ban: {e}",
                 ephemeral=True
             )
 
-        await interaction.response.send_message(
-            f"**{member}** has been banned.\nReason: {reason}"
+        await ctx.send(
+            f"**{member}** has been banned.\nReason: {reason}",
+            ephemeral=True
         )
 
-    @app_commands.command(
+    @commands.hybrid_command(
         name="unban",
         description="Unban a user from the server."
     )
+    @commands.has_permissions(ban_members=True)
     @app_commands.default_permissions(ban_members=True)
     @app_commands.describe(
         user="The user to unban.",
@@ -125,36 +130,38 @@ class Moderation(commands.Cog):
     )
     async def unban(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         user: discord.User,
         reason: str = "No reason provided."
     ):
         try:
-            await interaction.guild.unban(user, reason=reason)
+            await ctx.guild.unban(user, reason=reason)
         except discord.NotFound:
-            return await interaction.response.send_message(
+            return await ctx.send(
                 "That user is not banned.",
                 ephemeral=True
             )
         except discord.Forbidden:
-            return await interaction.response.send_message(
+            return await ctx.send(
                 "I don't have permission to unban that user.",
                 ephemeral=True
             )
         except discord.HTTPException as e:
-            return await interaction.response.send_message(
+            return await ctx.send(
                 f"Failed to unban: {e}",
                 ephemeral=True
             )
 
-        await interaction.response.send_message(
-            f"**{user}** has been unbanned.\nReason: {reason}"
+        await ctx.send(
+            f"**{user}** has been unbanned.\nReason: {reason}",
+            ephemeral=True
         )
 
-    @app_commands.command(
+    @commands.hybrid_command(
         name="timeout",
         description="Timeout (mute) a member."
     )
+    @commands.has_permissions(moderate_members=True)
     @app_commands.default_permissions(moderate_members=True)
     @app_commands.describe(
         member="Member to timeout.",
@@ -163,42 +170,44 @@ class Moderation(commands.Cog):
     )
     async def timeout(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         member: discord.Member,
         duration: int,
         reason: str = "No reason provided."
     ):
         if duration < 1:
-            return await interaction.response.send_message(
+            return await ctx.send(
                 "Duration must be at least 1 minute.",
                 ephemeral=True
             )
 
-        allowed, error = self.can_act_on(interaction, member)
+        allowed, error = self.can_act_on(ctx, member)
         if not allowed:
-            return await interaction.response.send_message(error, ephemeral=True)
+            return await ctx.send(error, ephemeral=True)
 
         try:
             await member.timeout(timedelta(minutes=duration), reason=reason)
         except discord.Forbidden:
-            return await interaction.response.send_message(
+            return await ctx.send(
                 "I don't have permission to timeout that member.",
                 ephemeral=True
             )
         except discord.HTTPException as e:
-            return await interaction.response.send_message(
+            return await ctx.send(
                 f"Failed to timeout: {e}",
                 ephemeral=True
             )
 
-        await interaction.response.send_message(
-            f"**{member}** has been timed out for **{duration}** minute(s).\nReason: {reason}"
+        await ctx.send(
+            f"**{member}** has been timed out for **{duration}** minute(s).\nReason: {reason}",
+            ephemeral=True
         )
 
-    @app_commands.command(
+    @commands.hybrid_command(
         name="warn",
         description="Warn a member."
     )
+    @commands.has_permissions(moderate_members=True)
     @app_commands.default_permissions(moderate_members=True)
     @app_commands.describe(
         member="Member to warn.",
@@ -206,21 +215,21 @@ class Moderation(commands.Cog):
     )
     async def warn(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         member: discord.Member,
         reason: str = "No reason provided."
     ):
-        allowed, error = self.can_act_on(interaction, member)
+        allowed, error = self.can_act_on(ctx, member)
         if not allowed:
-            return await interaction.response.send_message(error, ephemeral=True)
+            return await ctx.send(error, ephemeral=True)
 
         data = load_warnings()
-        guild_key = str(interaction.guild_id)
+        guild_key = str(ctx.guild.id)
         member_key = str(member.id)
 
         warning = {
             "reason": reason,
-            "moderator": str(interaction.user.id),
+            "moderator": str(ctx.author.id),
             "timestamp": str(discord.utils.utcnow()),
         }
 
@@ -229,28 +238,30 @@ class Moderation(commands.Cog):
 
         count = len(data[guild_key][member_key])
 
-        await interaction.response.send_message(
-            f"**{member}** has been warned.\nReason: {reason}\nWarnings: {count}"
+        await ctx.send(
+            f"**{member}** has been warned.\nReason: {reason}\nWarnings: {count}",
+            ephemeral=True
         )
 
-    @app_commands.command(
+    @commands.hybrid_command(
         name="warnings",
         description="View a member's warnings."
     )
+    @commands.has_permissions(moderate_members=True)
     @app_commands.default_permissions(moderate_members=True)
     @app_commands.describe(
         member="Member to check."
     )
     async def warnings(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         member: discord.Member
     ):
         data = load_warnings()
-        warns = data.get(str(interaction.guild_id), {}).get(str(member.id), [])
+        warns = data.get(str(ctx.guild.id), {}).get(str(member.id), [])
 
         if not warns:
-            return await interaction.response.send_message(
+            return await ctx.send(
                 f"**{member}** has no warnings.",
                 ephemeral=True
             )
@@ -260,7 +271,7 @@ class Moderation(commands.Cog):
             for index, warning in enumerate(warns)
         ]
 
-        await interaction.response.send_message(
+        await ctx.send(
             f"**{member}** has {len(warns)} warning(s):\n" + "\n".join(lines),
             ephemeral=True
         )

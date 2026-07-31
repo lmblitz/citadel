@@ -8,33 +8,33 @@ class Purge(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(
+    @commands.hybrid_command(
         name="purge",
         description="Bulk delete messages in the current channel."
     )
+    @commands.has_permissions(manage_messages=True)
     @app_commands.default_permissions(manage_messages=True)
     @app_commands.describe(
         amount="Number of messages to delete (max 100)."
     )
     async def purge(
         self,
-        interaction: discord.Interaction,
+        ctx: commands.Context,
         amount: int
     ):
 
         if amount < 1 or amount > 100:
-            await interaction.response.send_message(
+            return await ctx.send(
                 "Amount must be between 1 and 100.",
                 ephemeral=True
             )
-            return
 
-        await interaction.response.defer(ephemeral=True)
+        await ctx.defer(ephemeral=True)
 
         deleted = []
 
         try:
-            result = await interaction.channel.purge(limit=amount)
+            result = await ctx.channel.purge(limit=amount)
 
             if isinstance(result, list):
                 deleted = result
@@ -42,19 +42,17 @@ class Purge(commands.Cog):
                 async for message in result:
                     deleted.append(message)
         except discord.Forbidden:
-            await interaction.followup.send(
+            return await ctx.send(
                 "I don't have permission to delete messages here.",
                 ephemeral=True
             )
-            return
         except discord.HTTPException as e:
-            await interaction.followup.send(
+            return await ctx.send(
                 f"Failed to purge messages: {e}",
                 ephemeral=True
             )
-            return
 
-        await interaction.followup.send(
+        await ctx.send(
             f"Deleted {len(deleted)} messages.",
             ephemeral=True
         )
