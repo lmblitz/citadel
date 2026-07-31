@@ -34,8 +34,13 @@ class Purge(commands.Cog):
         deleted = []
 
         try:
-            async for message in interaction.channel.purge(limit=amount):
-                deleted.append(message)
+            result = await interaction.channel.purge(limit=amount)
+
+            if isinstance(result, list):
+                deleted = result
+            else:
+                async for message in result:
+                    deleted.append(message)
         except discord.Forbidden:
             await interaction.followup.send(
                 "I don't have permission to delete messages here.",
