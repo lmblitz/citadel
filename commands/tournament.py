@@ -1,9 +1,12 @@
 import json
 import os
+import re
 
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+TIMESTAMP_RE = re.compile(r"<t:(\d+):[a-zA-Z]>")
 
 
 # ==========================
@@ -171,7 +174,7 @@ class Tournament(commands.Cog):
         description="Create a tournament voting panel."
     )
     @app_commands.describe(
-        timestamp="Start time as a UNIX timestamp (get one at hammertime.cyou)",
+        timestamp="Start time as a Discord timestamp like <t:1785474780:F> from hammertime.cyou",
         game1="First game option",
         game2="Second game option",
         game3="Third game option",
@@ -180,12 +183,25 @@ class Tournament(commands.Cog):
     async def tournament(
         self,
         interaction: discord.Interaction,
-        timestamp: int,
+        timestamp: str,
         game1: str,
         game2: str,
         game3: str,
         game4: str
     ):
+
+        match = TIMESTAMP_RE.search(timestamp)
+
+        if match:
+            timestamp = match.group(1)
+        elif not timestamp.strip().isdigit():
+            return await interaction.response.send_message(
+                "Timestamp must be a UNIX number or a Discord timestamp "
+                "like `<t:1785474780:F>`.",
+                ephemeral=True
+            )
+
+        ts = int(timestamp)
 
         # Permission Check
 
@@ -221,13 +237,13 @@ class Tournament(commands.Cog):
 A new tournament has been scheduled.
 
 **Tournament Date**
-<t:{timestamp}:F>
+<t:{ts}:F>
 
 **Tournament Time**
-<t:{timestamp}:t>
+<t:{ts}:t>
 
 **Starts In**
-<t:{timestamp}:R>
+<t:{ts}:R>
 
 Select the game you would like to compete in.
 """,
