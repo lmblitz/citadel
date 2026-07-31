@@ -1,5 +1,3 @@
-import os
-
 import discord
 from discord.ext import commands
 
@@ -9,11 +7,6 @@ RULES_CHANNEL = 1532575202649575587
 INFO_CHANNEL = 1532575693374881953
 CLAN_CHANNEL = 1532575934085861457
 HELP_CHANNEL = 1532601436809203862
-
-WELCOME_IMAGE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "welcome.png",
-)
 
 
 class Welcome(commands.Cog):
@@ -69,7 +62,6 @@ class Welcome(commands.Cog):
             await channel.send(
                 content=f"{member.mention}",
                 embed=self._welcome_embed(member, guild),
-                file=discord.File(WELCOME_IMAGE, filename="welcome.png"),
             )
         except (discord.Forbidden, discord.HTTPException):
             pass
@@ -99,7 +91,6 @@ class Welcome(commands.Cog):
             await ctx.author.send(
                 content=f"{ctx.author.mention}",
                 embed=self._welcome_embed(ctx.author, ctx.guild),
-                file=discord.File(WELCOME_IMAGE, filename="welcome.png"),
             )
         except discord.Forbidden:
             return await ctx.send(

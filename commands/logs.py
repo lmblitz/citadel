@@ -249,7 +249,7 @@ class Logs(commands.Cog):
             description=f"It was sent at {dt(message.created_at, 'f')}",
         )
         embed.set_author(
-            name=f"Message from {message.author.mention} deleted in {message.channel.name}",
+            name=f"Message from {message.author.display_name} deleted in #{message.channel.name}",
             icon_url=message.author.display_avatar.url,
         )
         embed.add_field(
