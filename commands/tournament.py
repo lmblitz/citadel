@@ -1,15 +1,23 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from datetime import datetime
+
+
+# ==========================
+# CONFIGURATION
+# ==========================
 
 TOURNAMENT_CHANNEL_ID = 1532575772496363674
 
 STAFF_ROLES = [
-    1532569640318931015,
-    1532569676901646346
+    1532569640318931015,  # Moderator
+    1532569676901646346   # Administrator
 ]
 
+
+# ==========================
+# TOURNAMENT VIEW
+# ==========================
 
 class TournamentView(discord.ui.View):
 
@@ -21,12 +29,13 @@ class TournamentView(discord.ui.View):
 
         for index, game in enumerate(games):
             self.add_item(
-                TournamentButton(
-                    game,
-                    index
-                )
+                TournamentButton(game, index)
             )
 
+
+# ==========================
+# TOURNAMENT BUTTON
+# ==========================
 
 class TournamentButton(discord.ui.Button):
 
@@ -34,7 +43,7 @@ class TournamentButton(discord.ui.Button):
         super().__init__(
             label=game,
             style=discord.ButtonStyle.primary,
-            custom_id=f"tournament_{index}"
+            custom_id=f"tournament_vote_{index}"
         )
 
         self.game = game
@@ -45,7 +54,7 @@ class TournamentButton(discord.ui.Button):
         view = self.view
 
 
-        # Remove previous vote
+        # Remove old vote
         if interaction.user.id in view.votes:
             del view.votes[interaction.user.id]
 
@@ -62,74 +71,57 @@ class TournamentButton(discord.ui.Button):
 
         for game in view.games:
 
-            amount = list(
+            votes = list(
                 view.votes.values()
             ).count(game)
 
 
-            percentage = (
-                round(
-                    (amount / total_votes) * 100
+            percentage = 0
+
+            if total_votes > 0:
+                percentage = round(
+                    (votes / total_votes) * 100
                 )
-                if total_votes > 0
-                else 0
-            )
 
 
             results.append(
-                f"**{game}**\n{amount} Votes • {percentage}%"
+                f"**{game}**\n{votes} Votes • {percentage}%"
             )
 
 
-        container = discord.ui.Container(
-
-            discord.ui.TextDisplay(
-                "# Tournament Voting"
+        embed = discord.Embed(
+            title="Tournament Voting",
+            description=(
+                "A tournament has been scheduled.\n\n"
+                "Select the game you would like to compete in.\n"
+                "Your vote can be changed at any time."
             ),
+            color=discord.Color.red()
+        )
 
 
-            discord.ui.Separator(),
+        embed.add_field(
+            name="Game Options",
+            value="\n\n".join(results),
+            inline=False
+        )
 
 
-            discord.ui.TextDisplay(
-                """
-A tournament has been scheduled.
-
-Select the game you would like to compete in.
-Your vote can be changed at any time.
-"""
-            ),
+        embed.add_field(
+            name="Status",
+            value="Voting Open",
+            inline=True
+        )
 
 
-            discord.ui.Separator(),
-
-
-            discord.ui.TextDisplay(
-                "# Game Options\n\n"
-                +
-                "\n\n".join(results)
-            ),
-
-
-            discord.ui.Separator(),
-
-
-            discord.ui.TextDisplay(
-                """
-**Status**
-Voting Open
-"""
-            )
-
+        embed.set_footer(
+            text=f"Total Votes: {total_votes}"
         )
 
 
         await interaction.message.edit(
-            components=[
-                container,
-                view
-            ],
-            flags=discord.MessageFlags.is_components_v2()
+            embed=embed,
+            view=view
         )
 
 
@@ -140,7 +132,9 @@ Voting Open
 
 
 
-
+# ==========================
+# COMMAND
+# ==========================
 
 class Tournament(commands.Cog):
 
@@ -151,48 +145,32 @@ class Tournament(commands.Cog):
 
     @app_commands.command(
         name="tournament",
-        description="Create a tournament vote."
+        description="Create a tournament voting panel."
     )
 
     @app_commands.describe(
-
         date="Tournament date",
-
         time="Tournament time",
-
-        game1="First game",
-
-        game2="Second game",
-
-        game3="Third game",
-
-        game4="Fourth game"
-
+        game1="First game option",
+        game2="Second game option",
+        game3="Third game option",
+        game4="Fourth game option"
     )
 
 
     async def tournament(
-
         self,
-
         interaction: discord.Interaction,
-
         date: str,
-
         time: str,
-
         game1: str,
-
         game2: str,
-
         game3: str,
-
         game4: str
-
     ):
 
 
-        # Staff Check
+        # Permission Check
 
         if not any(
             role.id in STAFF_ROLES
@@ -205,7 +183,6 @@ class Tournament(commands.Cog):
             )
 
 
-
         channel = interaction.guild.get_channel(
             TOURNAMENT_CHANNEL_ID
         )
@@ -214,36 +191,22 @@ class Tournament(commands.Cog):
         if channel is None:
 
             return await interaction.response.send_message(
-                "Tournament channel not found.",
+                "Tournament channel could not be found.",
                 ephemeral=True
             )
 
 
-
         games = [
-
             game1,
             game2,
             game3,
             game4
-
         ]
 
 
-
-        container = discord.ui.Container(
-
-            discord.ui.TextDisplay(
-                "# Tournament Voting"
-            ),
-
-
-            discord.ui.Separator(),
-
-
-            discord.ui.TextDisplay(
-
-f"""
+        embed = discord.Embed(
+            title="Tournament Voting",
+            description=f"""
 A new tournament has been scheduled.
 
 **Tournament Date**
@@ -251,19 +214,16 @@ A new tournament has been scheduled.
 
 **Tournament Time**
 {time}
-"""
 
-            ),
+Select the game you would like to compete in.
+""",
+            color=discord.Color.red()
+        )
 
 
-            discord.ui.Separator(),
-
-
-            discord.ui.TextDisplay(
-
-f"""
-# Game Options
-
+        embed.add_field(
+            name="Game Options",
+            value=f"""
 **{game1}**
 0 Votes • 0%
 
@@ -275,58 +235,49 @@ f"""
 
 **{game4}**
 0 Votes • 0%
-"""
-
-            ),
-
-
-            discord.ui.Separator(),
-
-
-            discord.ui.TextDisplay(
-
-f"""
-**Created By**
-{interaction.user.mention}
-
-**Status**
-Voting Open
-"""
-
-            )
-
+""",
+            inline=False
         )
 
 
-
-        view = TournamentView(
-            games
+        embed.add_field(
+            name="Created By",
+            value=interaction.user.mention,
+            inline=True
         )
 
+
+        embed.add_field(
+            name="Status",
+            value="Voting Open",
+            inline=True
+        )
+
+
+        embed.set_thumbnail(
+            url=interaction.guild.icon.url
+            if interaction.guild.icon
+            else None
+        )
+
+
+        embed.set_footer(
+            text=f"{interaction.guild.name} • Tournament"
+        )
+
+
+        view = TournamentView(games)
 
 
         await channel.send(
-
-            components=[
-
-                container,
-
-                view
-
-            ],
-
-            flags=discord.MessageFlags.is_components_v2()
-
+            embed=embed,
+            view=view
         )
 
 
-
         await interaction.response.send_message(
-
             "Tournament voting has been created.",
-
             ephemeral=True
-
         )
 
 
