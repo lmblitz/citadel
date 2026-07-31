@@ -2,6 +2,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from .logs import log_mod_action
+
 
 class Purge(commands.Cog):
 
@@ -55,6 +57,13 @@ class Purge(commands.Cog):
         await ctx.send(
             f"Deleted {len(deleted)} messages.",
             ephemeral=True
+        )
+        await log_mod_action(
+            self.bot,
+            "Purge",
+            ctx.channel,
+            ctx.author,
+            f"{len(deleted)} messages deleted",
         )
 
 

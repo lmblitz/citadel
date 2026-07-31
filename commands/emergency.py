@@ -3,7 +3,6 @@ from discord import app_commands
 from discord.ext import commands
 
 
-# IDs
 REQUIRED_ROLE = 1532599944236503230
 
 MODERATOR_ROLE = 1532569676901646346
@@ -29,7 +28,6 @@ class Emergency(commands.Cog):
         reason: str
     ):
 
-        # Permission Check
         if not any(
             role.id == REQUIRED_ROLE
             for role in interaction.user.roles

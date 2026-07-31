@@ -9,15 +9,11 @@ from discord.ext import commands
 TIMESTAMP_RE = re.compile(r"<t:(\d+):[a-zA-Z]>")
 
 
-# ==========================
-# CONFIGURATION
-# ==========================
-
 TOURNAMENT_CHANNEL_ID = 1532575772496363674
 
 STAFF_ROLES = [
-    1532569640318931015,  # Moderator
-    1532569676901646346,  # Administrator
+    1532569640318931015,
+    1532569676901646346,
 ]
 
 DATA_FILE = os.path.join(
@@ -25,10 +21,6 @@ DATA_FILE = os.path.join(
     "tournaments.json",
 )
 
-
-# ==========================
-# HELPERS
-# ==========================
 
 def load_data():
     try:
@@ -42,10 +34,6 @@ def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
-
-# ==========================
-# TOURNAMENT VIEW
-# ==========================
 
 class TournamentView(discord.ui.View):
 
@@ -73,10 +61,6 @@ class TournamentView(discord.ui.View):
         save_data(data)
 
 
-# ==========================
-# TOURNAMENT BUTTON
-# ==========================
-
 class TournamentButton(discord.ui.Button):
 
     def __init__(self, game, index):
@@ -92,7 +76,6 @@ class TournamentButton(discord.ui.Button):
 
         view = self.view
 
-        # Record / change vote
         view.votes[interaction.user.id] = self.game
 
         view.persist(interaction.message.id)
@@ -162,10 +145,6 @@ class TournamentButton(discord.ui.Button):
         )
 
 
-# ==========================
-# COMMAND
-# ==========================
-
 class Tournament(commands.Cog):
 
     def __init__(self, bot):
@@ -215,8 +194,6 @@ class Tournament(commands.Cog):
             )
 
         ts = int(timestamp)
-
-        # Permission Check
 
         if not any(
             role.id in STAFF_ROLES

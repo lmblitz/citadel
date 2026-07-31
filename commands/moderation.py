@@ -6,6 +6,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from .logs import log_mod_action
+
 DATA_FILE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "warnings.json",
@@ -79,6 +81,7 @@ class Moderation(commands.Cog):
             f"**{member}** has been kicked.\nReason: {reason}",
             ephemeral=True
         )
+        await log_mod_action(self.bot, "Kick", member, ctx.author, reason)
 
     @commands.hybrid_command(
         name="ban",
@@ -117,6 +120,7 @@ class Moderation(commands.Cog):
             f"**{member}** has been banned.\nReason: {reason}",
             ephemeral=True
         )
+        await log_mod_action(self.bot, "Ban", member, ctx.author, reason)
 
     @commands.hybrid_command(
         name="unban",
@@ -156,6 +160,7 @@ class Moderation(commands.Cog):
             f"**{user}** has been unbanned.\nReason: {reason}",
             ephemeral=True
         )
+        await log_mod_action(self.bot, "Unban", user, ctx.author, reason)
 
     @commands.hybrid_command(
         name="timeout",
@@ -202,6 +207,13 @@ class Moderation(commands.Cog):
             f"**{member}** has been timed out for **{duration}** minute(s).\nReason: {reason}",
             ephemeral=True
         )
+        await log_mod_action(
+            self.bot,
+            "Timeout",
+            member,
+            ctx.author,
+            f"{reason} (duration: {duration} minute(s))",
+        )
 
     @commands.hybrid_command(
         name="warn",
@@ -242,6 +254,7 @@ class Moderation(commands.Cog):
             f"**{member}** has been warned.\nReason: {reason}\nWarnings: {count}",
             ephemeral=True
         )
+        await log_mod_action(self.bot, "Warn", member, ctx.author, reason)
 
     @commands.hybrid_command(
         name="warnings",
