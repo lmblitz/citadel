@@ -77,7 +77,7 @@ class TournamentButton(discord.ui.Button):
     def __init__(self, game, index):
         super().__init__(
             label=game,
-            style=discord.ButtonStyle.primary,
+            style=discord.ButtonStyle.secondary,
             custom_id=f"tournament_vote_{index}"
         )
 
@@ -171,8 +171,7 @@ class Tournament(commands.Cog):
         description="Create a tournament voting panel."
     )
     @app_commands.describe(
-        date="Tournament date",
-        time="Tournament time",
+        timestamp="Start time as a UNIX timestamp (get one at hammertime.cyou)",
         game1="First game option",
         game2="Second game option",
         game3="Third game option",
@@ -181,8 +180,7 @@ class Tournament(commands.Cog):
     async def tournament(
         self,
         interaction: discord.Interaction,
-        date: str,
-        time: str,
+        timestamp: int,
         game1: str,
         game2: str,
         game3: str,
@@ -223,10 +221,13 @@ class Tournament(commands.Cog):
 A new tournament has been scheduled.
 
 **Tournament Date**
-{date}
+<t:{timestamp}:F>
 
 **Tournament Time**
-{time}
+<t:{timestamp}:t>
+
+**Starts In**
+<t:{timestamp}:R>
 
 Select the game you would like to compete in.
 """,
