@@ -68,6 +68,12 @@ class Emergency(commands.Cog):
         )
 
         embed.add_field(
+            name="**Channel**",
+            value=interaction.channel.mention,
+            inline=True
+        )
+
+        embed.add_field(
             name="**User ID**",
             value=f"`{interaction.user.id}`",
             inline=True
