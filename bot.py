@@ -5,6 +5,8 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+import dashboard
+
 load_dotenv()
 
 intents = discord.Intents.default()
@@ -25,6 +27,7 @@ async def setup_hook():
         name = os.path.splitext(os.path.basename(path))[0]
         await bot.load_extension(f"commands.{name}")
         print(f"Loaded commands.{name}")
+    await dashboard.start(bot)
 
 
 bot.setup_hook = setup_hook
