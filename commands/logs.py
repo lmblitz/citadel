@@ -46,7 +46,7 @@ async def log_mod_action(bot, action, target, moderator, reason=None):
     embed.set_footer(text=f"ID: {target.id}")
 
     try:
-        await channel.send(embed=embed)
+        await channel.send(embed=embed, silent=True)
     except (discord.Forbidden, discord.HTTPException):
         pass
 
@@ -66,7 +66,7 @@ class Logs(commands.Cog):
             return
 
         try:
-            await channel.send(embed=embed)
+            await channel.send(embed=embed, silent=True)
         except (discord.Forbidden, discord.HTTPException):
             pass
 
@@ -203,13 +203,18 @@ class Logs(commands.Cog):
         embed = self._embed(
             "message_logs",
             "Message Deleted",
-            description=message.content or "*no text content*",
+            description=f"It was sent at {discord.utils.format_dt(message.created_at, 'f')}",
         )
-        embed.set_author(name=message.author, icon_url=message.author.display_avatar.url)
-        embed.add_field(name="Channel", value=message.channel.mention, inline=True)
-        embed.add_field(name="ID", value=message.id, inline=True)
-        if message.attachments:
-            embed.add_field(name="Attachments", value=len(message.attachments), inline=True)
+        embed.set_author(
+            name=f"Message from {message.author.mention} deleted in {message.channel.name}",
+            icon_url=message.author.display_avatar.url,
+        )
+        embed.add_field(
+            name="Message Content",
+            value=truncate(message.content or "*no text content*", 1024),
+            inline=False,
+        )
+        embed.set_footer(text=f"User ID: {message.author.id}")
         await self._send("message_logs", embed)
 
     @commands.Cog.listener()
@@ -220,13 +225,19 @@ class Logs(commands.Cog):
             return
         if not before.content or not after.content:
             return
+        edited = after.edited_at or discord.utils.utcnow()
         embed = self._embed(
             "message_logs",
             "Message Edited",
-            description=f"{after.author.mention} in {after.channel.mention}\n\n[Jump]({after.jump_url})",
+            description=f"View the message in {after.channel.mention}",
+        )
+        embed.set_author(
+            name=f"Message from @{after.author.display_name} edited {discord.utils.format_dt(edited, 'R')}",
+            icon_url=after.author.display_avatar.url,
         )
         embed.add_field(name="Before", value=truncate(before.content, 1024), inline=False)
         embed.add_field(name="After", value=truncate(after.content, 1024), inline=False)
+        embed.set_footer(text=f"User ID: {after.author.id}")
         await self._send("message_logs", embed)
 
     @commands.Cog.listener()
