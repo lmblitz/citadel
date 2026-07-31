@@ -49,12 +49,13 @@ def save_data(data):
 
 class TournamentView(discord.ui.View):
 
-    def __init__(self, games, votes=None):
+    def __init__(self, games, votes=None, timestamp=None):
         super().__init__(timeout=None)
 
         self.games = games
         self.votes = {int(k): v for k, v in (votes or {}).items()}
         self.channel_id = None
+        self.timestamp = timestamp
 
         for index, game in enumerate(games):
             self.add_item(
@@ -67,6 +68,7 @@ class TournamentView(discord.ui.View):
             "channel_id": self.channel_id,
             "games": self.games,
             "votes": {str(k): v for k, v in self.votes.items()},
+            "timestamp": self.timestamp,
         }
         save_data(data)
 
@@ -120,7 +122,14 @@ class TournamentButton(discord.ui.Button):
             title="Tournament Voting",
             description=(
                 "A tournament has been scheduled.\n\n"
-                "Select the game you would like to compete in.\n"
+                + (
+                    f"**Tournament Date**\n<t:{view.timestamp}:F>\n\n"
+                    f"**Tournament Time**\n<t:{view.timestamp}:t>\n\n"
+                    f"**Starts In**\n<t:{view.timestamp}:R>\n\n"
+                    if view.timestamp
+                    else ""
+                )
+                + "Select the game you would like to compete in.\n"
                 "Your vote can be changed at any time."
             ),
             color=discord.Color.red()
@@ -165,7 +174,11 @@ class Tournament(commands.Cog):
     async def cog_load(self):
         data = load_data()
         for message_id, panel in data.items():
-            view = TournamentView(panel["games"], panel.get("votes", {}))
+            view = TournamentView(
+                panel["games"],
+                panel.get("votes", {}),
+                panel.get("timestamp"),
+            )
             view.channel_id = panel.get("channel_id")
             self.bot.add_view(view, message_id=int(message_id))
 
@@ -280,7 +293,7 @@ Select the game you would like to compete in.
             text=f"{interaction.guild.name} • Tournament"
         )
 
-        view = TournamentView(games)
+        view = TournamentView(games, timestamp=ts)
         view.channel_id = channel.id
 
         message = await channel.send(
