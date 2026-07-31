@@ -11,9 +11,14 @@ bot = commands.Bot(command_prefix="!", intents=discord.Intents.default())
 
 
 async def setup_hook():
-    for path in glob("commands/*.py"):
-        if path.endswith("__init__.py"):
+    for path in glob("commands/*"):
+        if not os.path.isfile(path):
             continue
+        if os.path.basename(path) == "__init__.py":
+            continue
+        if not path.endswith(".py"):
+            os.rename(path, path + ".py")
+            path += ".py"
         name = os.path.splitext(os.path.basename(path))[0]
         await bot.load_extension(f"commands.{name}")
         print(f"Loaded commands.{name}")
