@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -12,22 +13,10 @@ DATA_FILE = os.path.join(
     "automod.json",
 )
 
-NON_LATIN_RE = re.compile(
-    "[\u0400-\u04FF"          # Cyrillic
-    "\u0590-\u05FF"           # Hebrew
-    "\u0600-\u06FF"           # Arabic
-    "\u0750-\u077F"           # Arabic Supplement
-    "\u0900-\u097F"           # Devanagari
-    "\u0E00-\u0E7F"           # Thai
-    "\u10A0-\u10FF"           # Georgian
-    "\u3040-\u309F"           # Hiragana
-    "\u30A0-\u30FF"           # Katakana
-    "\u4E00-\u9FFF"           # CJK
-    "\uAC00-\uD7AF"           # Hangul
-    "]"
-)
+MODEL_NAME = "papluca/xlm-roberta-base-language-detection"
 
-LATIN_RE = re.compile("[A-Za-z\u00C0-\u024F]")
+DEFAULT_ACCEPTED_LANGUAGES = ["en"]
+DEFAULT_MIN_LENGTH = 15
 
 DM_MESSAGE = (
     "Your message was removed by automated moderation. "
@@ -69,6 +58,8 @@ class Automod(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
+        self._pipeline = None
+        self._pipeline_lock = asyncio.Lock()
 
     def get_config(self, guild_id):
         return load_data().get(str(guild_id), {})
@@ -115,6 +106,36 @@ class Automod(commands.Cog):
         except discord.HTTPException:
             pass
 
+    def build_pipeline(self):
+        from transformers import (
+            AutoModelForSequenceClassification,
+            AutoTokenizer,
+            TextClassificationPipeline,
+        )
+
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+        model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
+        return TextClassificationPipeline(model=model, tokenizer=tokenizer)
+
+    async def get_pipeline(self):
+        if self._pipeline is None:
+            async with self._pipeline_lock:
+                if self._pipeline is None:
+                    try:
+                        self._pipeline = await asyncio.to_thread(self.build_pipeline)
+                    except Exception as e:
+                        print(f"Failed to load language detection model: {e}")
+                        self._pipeline = False
+        return self._pipeline or None
+
+    async def is_unaccepted_language(self, content, accepted):
+        pipeline = await self.get_pipeline()
+        if pipeline is None:
+            return False
+
+        prediction = await asyncio.to_thread(pipeline, content)
+        return prediction[0]["label"] not in accepted
+
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.guild is None or message.author.bot:
@@ -135,10 +156,12 @@ class Automod(commands.Cog):
         if not content:
             return
 
-        latin = len(LATIN_RE.findall(content))
-        non_latin = len(NON_LATIN_RE.findall(content))
+        if len(content) <= config.get("min_length", DEFAULT_MIN_LENGTH):
+            return
 
-        if non_latin > 0 and non_latin > latin:
+        accepted = config.get("accepted_languages", DEFAULT_ACCEPTED_LANGUAGES)
+
+        if await self.is_unaccepted_language(content, accepted):
             await self.remove_and_notify(
                 message,
                 "This is an English-speaking community. "
@@ -365,7 +388,11 @@ class Automod(commands.Cog):
 
         embed.add_field(
             name="English-Only Filter",
-            value="Enabled" if config.get("english_only") else "Disabled",
+            value=(
+                "Enabled"
+                if config.get("english_only")
+                else "Disabled"
+            ),
             inline=False,
         )
 
@@ -373,23 +400,33 @@ class Automod(commands.Cog):
 
     @automod.command(
         name="english",
-        description="Toggle the English-only message filter.",
+        description="Toggle the English-only language filter.",
     )
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.describe(
-        enabled="True to enable, False to disable."
+        enabled="True to enable, False to disable.",
+        min_length="Minimum message length to check (default 15).",
     )
     async def english(
         self,
         interaction: discord.Interaction,
         enabled: bool,
+        min_length: int = DEFAULT_MIN_LENGTH,
     ):
+        if min_length < 1:
+            return await interaction.response.send_message(
+                "Min length must be at least 1.",
+                ephemeral=True,
+            )
+
         config = self.get_config(interaction.guild_id)
         config["english_only"] = enabled
+        config["min_length"] = min_length
         self.set_config(interaction.guild_id, config)
 
         await interaction.response.send_message(
-            f"English-only filter is now {'enabled' if enabled else 'disabled'}.",
+            f"English-only filter is now {'enabled' if enabled else 'disabled'} "
+            f"(min length {min_length}).",
             ephemeral=True,
         )
 
