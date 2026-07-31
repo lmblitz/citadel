@@ -17,12 +17,28 @@ COLORS = {
     "mod_logs": 0xE67E22,
 }
 
+MOD_ACTION_COLORS = {
+    "Kick": 0xE67E22,
+    "Ban": 0xE74C3C,
+    "Unban": 0x2ECC71,
+    "Timeout": 0xE67E22,
+    "Warn": 0xF1C40F,
+    "Purge": 0x3498DB,
+    "Honeypot Kick": 0xE74C3C,
+}
+
 
 def truncate(text, limit):
     text = str(text)
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
+
+
+def dt(timestamp, style):
+    if timestamp is None:
+        return "Unknown"
+    return discord.utils.format_dt(timestamp, style)
 
 
 async def log_mod_action(bot, action, target, moderator, reason=None):
@@ -36,11 +52,12 @@ async def log_mod_action(bot, action, target, moderator, reason=None):
 
     embed = discord.Embed(
         title=action,
-        color=COLORS["mod_logs"],
+        color=MOD_ACTION_COLORS.get(action, COLORS["mod_logs"]),
         timestamp=discord.utils.utcnow(),
     )
-    embed.add_field(name="Target", value=str(target), inline=True)
-    embed.add_field(name="Moderator", value=str(moderator), inline=True)
+    avatar = getattr(moderator, "display_avatar", None)
+    embed.set_author(name=moderator, icon_url=avatar.url if avatar else None)
+    embed.add_field(name="Target", value=f"{target} (`{target.id}`)", inline=True)
     if reason:
         embed.add_field(name="Reason", value=truncate(reason, 1024), inline=False)
     embed.set_footer(text=f"ID: {target.id}")
@@ -97,6 +114,13 @@ class Logs(commands.Cog):
             description=f"{channel.mention}\n`{channel.name}`",
         )
         embed.add_field(name="Type", value=str(channel.type), inline=True)
+        embed.add_field(
+            name="Category",
+            value=channel.category.name if channel.category else "None",
+            inline=True,
+        )
+        embed.add_field(name="Position", value=getattr(channel, "position", 0), inline=True)
+        embed.set_footer(text=f"Channel ID: {channel.id}")
         await self._send("channel_logs", embed)
 
     @commands.Cog.listener()
@@ -109,6 +133,12 @@ class Logs(commands.Cog):
             description=f"`{channel.name}`",
         )
         embed.add_field(name="Type", value=str(channel.type), inline=True)
+        embed.add_field(
+            name="Category",
+            value=channel.category.name if channel.category else "None",
+            inline=True,
+        )
+        embed.set_footer(text=f"Channel ID: {channel.id}")
         await self._send("channel_logs", embed)
 
     @commands.Cog.listener()
@@ -122,6 +152,7 @@ class Logs(commands.Cog):
             ("slowmode_delay", "Slowmode"),
             ("nsfw", "NSFW"),
             ("category", "Category"),
+            ("position", "Position"),
         ):
             diff = self._diff(before, after, attr, label)
             if diff:
@@ -133,6 +164,7 @@ class Logs(commands.Cog):
             "Channel Updated",
             description=f"{after.mention}\n" + "\n".join(changes),
         )
+        embed.set_footer(text=f"Channel ID: {after.id}")
         await self._send("channel_logs", embed)
 
     @commands.Cog.listener()
@@ -143,6 +175,10 @@ class Logs(commands.Cog):
             description=f"{role.mention} (`{role.name}`)",
         )
         embed.add_field(name="Color", value=str(role.color), inline=True)
+        embed.add_field(name="Hoisted", value=str(role.hoist), inline=True)
+        embed.add_field(name="Mentionable", value=str(role.mentionable), inline=True)
+        embed.add_field(name="Position", value=role.position, inline=True)
+        embed.set_footer(text=f"Role ID: {role.id}")
         await self._send("role_logs", embed)
 
     @commands.Cog.listener()
@@ -152,6 +188,10 @@ class Logs(commands.Cog):
             "Role Deleted",
             description=f"`{role.name}`",
         )
+        embed.add_field(name="Color", value=str(role.color), inline=True)
+        embed.add_field(name="Hoisted", value=str(role.hoist), inline=True)
+        embed.add_field(name="Mentionable", value=str(role.mentionable), inline=True)
+        embed.set_footer(text=f"Role ID: {role.id}")
         await self._send("role_logs", embed)
 
     @commands.Cog.listener()
@@ -174,6 +214,7 @@ class Logs(commands.Cog):
             "Role Updated",
             description=f"{after.mention}\n" + "\n".join(changes),
         )
+        embed.set_footer(text=f"Role ID: {after.id}")
         await self._send("role_logs", embed)
 
     @commands.Cog.listener()
@@ -192,6 +233,8 @@ class Logs(commands.Cog):
             "Member Roles Updated",
             description=f"{after.mention}\n" + "\n".join(lines),
         )
+        embed.set_thumbnail(url=after.display_avatar.url)
+        embed.set_footer(text=f"ID: {after.id}")
         await self._send("role_logs", embed)
 
     @commands.Cog.listener()
@@ -203,7 +246,7 @@ class Logs(commands.Cog):
         embed = self._embed(
             "message_logs",
             "Message Deleted",
-            description=f"It was sent at {discord.utils.format_dt(message.created_at, 'f')}",
+            description=f"It was sent at {dt(message.created_at, 'f')}",
         )
         embed.set_author(
             name=f"Message from {message.author.mention} deleted in {message.channel.name}",
@@ -214,6 +257,10 @@ class Logs(commands.Cog):
             value=truncate(message.content or "*no text content*", 1024),
             inline=False,
         )
+        embed.add_field(name="Message ID", value=message.id, inline=True)
+        embed.add_field(name="Channel", value=message.channel.mention, inline=True)
+        if message.attachments:
+            embed.add_field(name="Attachments", value=len(message.attachments), inline=True)
         embed.set_footer(text=f"User ID: {message.author.id}")
         await self._send("message_logs", embed)
 
@@ -232,11 +279,12 @@ class Logs(commands.Cog):
             description=f"View the message in {after.channel.mention}",
         )
         embed.set_author(
-            name=f"Message from @{after.author.display_name} edited {discord.utils.format_dt(edited, 'R')}",
+            name=f"Message from @{after.author.display_name} edited {dt(edited, 'R')}",
             icon_url=after.author.display_avatar.url,
         )
         embed.add_field(name="Before", value=truncate(before.content, 1024), inline=False)
         embed.add_field(name="After", value=truncate(after.content, 1024), inline=False)
+        embed.add_field(name="Message ID", value=after.id, inline=True)
         embed.set_footer(text=f"User ID: {after.author.id}")
         await self._send("message_logs", embed)
 
@@ -253,6 +301,9 @@ class Logs(commands.Cog):
             "Bulk Messages Deleted",
             description=f"**{len(messages)}** messages in {channel.mention}",
         )
+        embed.add_field(name="Channel", value=channel.mention, inline=True)
+        embed.add_field(name="Channel ID", value=channel.id, inline=True)
+        embed.set_footer(text=f"Messages: {len(messages)}")
         await self._send("message_logs", embed)
 
     @commands.Cog.listener()
@@ -262,20 +313,27 @@ class Logs(commands.Cog):
             "Member Joined",
             description=f"{member.mention}",
         )
-        embed.add_field(name="ID", value=member.id, inline=True)
-        embed.add_field(name="Account Created", value=f"<t:{int(member.created_at.timestamp())}:R>", inline=True)
+        embed.set_thumbnail(url=member.display_avatar.url)
+        embed.add_field(name="ID", value=f"`{member.id}`", inline=True)
+        embed.add_field(name="Account Created", value=dt(member.created_at, "R"), inline=True)
+        embed.add_field(name="Joined", value=dt(member.joined_at, "R"), inline=True)
+        embed.set_footer(text=f"ID: {member.id}")
         await self._send("server_logs", embed)
 
     @commands.Cog.listener()
     async def on_member_remove(self, member):
+        roles = [r for r in member.roles if not r.is_default()]
         embed = self._embed(
             "server_logs",
             "Member Left",
             description=f"{member.mention} (`{member.name}`)",
         )
-        if member.joined_at:
-            embed.add_field(name="Joined", value=f"<t:{int(member.joined_at.timestamp())}:R>", inline=True)
-        embed.add_field(name="Roles", value=len([r for r in member.roles if not r.is_default()]), inline=True)
+        embed.set_thumbnail(url=member.display_avatar.url)
+        embed.add_field(name="ID", value=f"`{member.id}`", inline=True)
+        embed.add_field(name="Joined", value=dt(member.joined_at, "R"), inline=True)
+        embed.add_field(name="Roles", value=len(roles), inline=True)
+        embed.add_field(name="Top Role", value=member.top_role.mention, inline=True)
+        embed.set_footer(text=f"ID: {member.id}")
         await self._send("server_logs", embed)
 
     @staticmethod
@@ -294,10 +352,13 @@ class Logs(commands.Cog):
         embed = self._embed(
             "server_logs",
             "Member Banned",
-            description=f"{user} (`{user.id}`)",
+            description=f"{user.mention} (`{user.id}`)",
         )
+        embed.set_thumbnail(url=user.display_avatar.url)
+        embed.add_field(name="ID", value=f"`{user.id}`", inline=True)
         if reason:
             embed.add_field(name="Reason", value=truncate(reason, 1024), inline=False)
+        embed.set_footer(text=f"ID: {user.id}")
         await self._send("server_logs", embed)
 
     @commands.Cog.listener()
@@ -306,10 +367,13 @@ class Logs(commands.Cog):
         embed = self._embed(
             "server_logs",
             "Member Unbanned",
-            description=f"{user} (`{user.id}`)",
+            description=f"{user.mention} (`{user.id}`)",
         )
+        embed.set_thumbnail(url=user.display_avatar.url)
+        embed.add_field(name="ID", value=f"`{user.id}`", inline=True)
         if reason:
             embed.add_field(name="Reason", value=truncate(reason, 1024), inline=False)
+        embed.set_footer(text=f"ID: {user.id}")
         await self._send("server_logs", embed)
 
     @commands.Cog.listener()
@@ -329,6 +393,7 @@ class Logs(commands.Cog):
             "Server Updated",
             description="\n".join(changes),
         )
+        embed.set_footer(text=f"Server ID: {after.id}")
         await self._send("server_logs", embed)
 
 
