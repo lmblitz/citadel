@@ -27,32 +27,30 @@ def save_data(data):
         json.dump(data, f, indent=2)
 
 
-def warning_embed(count):
+class ActionsView(discord.ui.View):
+
+    def __init__(self, count):
+        super().__init__()
+        self.add_item(
+            discord.ui.Button(
+                label=f"Actions taken: {count}",
+                style=discord.ButtonStyle.secondary,
+                disabled=True,
+                custom_id="honeypot_actions_taken",
+            )
+        )
+
+
+def warning_embed(bot):
     embed = discord.Embed(
         title="DO NOT SEND MESSAGES IN THIS CHANNEL",
         description=(
-            "This channel is configured to catch spam bots. Any messages "
-            "in this channel will be flagged and result in a softban from "
-            "this server."
+            "This channel is used to catch spam bots. Any messages sent "
+            "here will result in a kick."
         ),
         color=discord.Color.red(),
     )
-    embed.add_field(name="Actions taken:", value=str(count), inline=False)
-    return embed
-
-
-def rejoin_embed():
-    embed = discord.Embed(
-        description=(
-            "This channel is used to detect and remove spam bots and "
-            "unwanted bot accounts from the server.\n\n"
-            "⚠️ Do not send any messages in this channel.\n\n"
-            "If you accidentally type here and are removed, you can simply "
-            "rejoin the server using:\n\n"
-            "🔗 discord.gg/topfive"
-        ),
-        color=discord.Color.red(),
-    )
+    embed.set_thumbnail(url=bot.user.display_avatar.url)
     return embed
 
 
@@ -74,29 +72,29 @@ class Honeypot(commands.Cog):
 
         data = load_data()
         warning_id = data.get("message_id")
-        rejoin_id = data.get("rejoin_id")
         count = data.get("kicked", 0)
 
         if warning_id:
             try:
                 warning = await channel.fetch_message(warning_id)
-                await warning.edit(embed=warning_embed(count))
+                await warning.edit(
+                    embed=warning_embed(self.bot),
+                    view=ActionsView(count),
+                )
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                warning = await channel.send(embed=warning_embed(count))
+                warning = await channel.send(
+                    embed=warning_embed(self.bot),
+                    view=ActionsView(count),
+                    silent=True,
+                )
                 data["message_id"] = warning.id
         else:
-            warning = await channel.send(embed=warning_embed(count))
+            warning = await channel.send(
+                embed=warning_embed(self.bot),
+                view=ActionsView(count),
+                silent=True,
+            )
             data["message_id"] = warning.id
-
-        if rejoin_id:
-            try:
-                await channel.fetch_message(rejoin_id)
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                rejoin = await channel.send(embed=rejoin_embed())
-                data["rejoin_id"] = rejoin.id
-        else:
-            rejoin = await channel.send(embed=rejoin_embed())
-            data["rejoin_id"] = rejoin.id
 
         data["kicked"] = count
         save_data(data)
@@ -127,7 +125,10 @@ class Honeypot(commands.Cog):
         if warning_id:
             try:
                 warning = await message.channel.fetch_message(warning_id)
-                await warning.edit(embed=warning_embed(count))
+                await warning.edit(
+                    embed=warning_embed(self.bot),
+                    view=ActionsView(count),
+                )
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 pass
 
