@@ -162,6 +162,9 @@ def _sysinfo():
 
 GUILD_ID = 1532560145895395398
 HIDDEN_ROLE_ID = 1532606512982261820
+ADMIN_ROLE_ID = 1532569640318931015
+MOD_ROLE_ID = 1532569676901646346
+TRIAL_MOD_ROLE_ID = 1532571322125910176
 
 
 def _guild(bot):
@@ -210,10 +213,20 @@ async def _list_members(bot):
     except LookupError:
         return []
     warnings_data = load_warnings().get(str(guild.id), {})
+    owner_id = guild.owner_id
     members = []
     for m in guild.members:
         if any(role.id == HIDDEN_ROLE_ID for role in m.roles):
             continue
+        role_ids = {role.id for role in m.roles}
+        if ADMIN_ROLE_ID in role_ids:
+            rank = "Admin"
+        elif MOD_ROLE_ID in role_ids:
+            rank = "Mod"
+        elif TRIAL_MOD_ROLE_ID in role_ids:
+            rank = "Trial Mod"
+        else:
+            rank = None
         members.append(
             {
                 "id": m.id,
@@ -222,6 +235,11 @@ async def _list_members(bot):
                 "status": str(m.status),
                 "avatar": m.display_avatar.url,
                 "warnings": len(warnings_data.get(str(m.id), [])),
+                "rank": rank,
+                "owner": m.id == owner_id,
+                "can_moderate": not (
+                    m.bot or m.id == owner_id or ADMIN_ROLE_ID in role_ids
+                ),
             }
         )
     members.sort(key=lambda m: m["name"].lower())
@@ -546,6 +564,11 @@ main{padding:20px 24px;max-width:1000px}
 .warncount{display:inline-block;background:#20242c;border:1px solid var(--line);color:var(--warn);border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600}
 .avatar{width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0}
 .st-online{color:var(--ok)} .st-idle{color:var(--warn)} .st-dnd{color:var(--err)} .st-offline{color:var(--muted)}
+.rankb{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.4px}
+.rk-owner{background:#3a2f00;border:1px solid #d4af37;color:#d4af37}
+.rk-admin{background:#2e0d0d;border:1px solid var(--err);color:var(--err)}
+.rk-mod{background:#101a2e;border:1px solid var(--acc);color:#7d8dff}
+.rk-trial{background:#221a2e;border:1px solid #a06bff;color:#a06bff}
 .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid var(--line);color:var(--muted)}
 button.btn{background:var(--acc);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
 button.btn:hover{filter:brightness(1.1)}
@@ -837,15 +860,28 @@ function renderMembers() {
   document.getElementById("memcount").textContent = list.length + " of " + allMembers.length;
   const box = document.getElementById("memlist");
   box.innerHTML = list.length
-    ? list.map(m =>
-      '<div class="row"><img class="avatar" src="' + esc(m.avatar) + '" alt="">' +
-      '<span>' + (m.bot ? '<span class="badge">BOT</span> ' : "") + esc(m.name) + '</span>' +
-      '<span class="id">' + esc(String(m.id)) + '</span>' +
-      (m.warnings ? '<span class="warncount">' + m.warnings + ' warn' + (m.warnings > 1 ? "s" : "") + '</span>' : "") +
-      '<span class="meta st-' + esc(m.status) + '">' + esc(m.status) + '</span>' +
-      (m.bot ? "" : '<button class="kick" data-m="' + m.id + '" data-a="kick">Kick</button><button class="warn" data-m="' + m.id + '" data-a="warn">Warn</button><button data-m="' + m.id + '" data-a="ban">Ban</button>') +
-      '</div>'
-    ).join("")
+    ? list.map(m => {
+      const badge = m.owner
+        ? '<span class="rankb rk-owner">OWNER</span> '
+        : m.rank === "Admin"
+          ? '<span class="rankb rk-admin">ADMIN</span> '
+          : m.rank === "Mod"
+            ? '<span class="rankb rk-mod">MOD</span> '
+            : m.rank === "Trial Mod"
+              ? '<span class="rankb rk-trial">TRIAL MOD</span> '
+              : "";
+      const actions = m.can_moderate
+        ? '<button class="kick" data-m="' + m.id + '" data-a="kick">Kick</button><button class="warn" data-m="' + m.id + '" data-a="warn">Warn</button><button data-m="' + m.id + '" data-a="ban">Ban</button>'
+        : "";
+      return '<div class="row"><img class="avatar" src="' + esc(m.avatar) + '" alt="">' +
+        '<span>' + (m.bot ? '<span class="badge">BOT</span> ' : "") + esc(m.name) + '</span>' +
+        badge +
+        '<span class="id">' + esc(String(m.id)) + '</span>' +
+        (m.warnings ? '<span class="warncount">' + m.warnings + ' warn' + (m.warnings > 1 ? "s" : "") + '</span>' : "") +
+        '<span class="meta st-' + esc(m.status) + '">' + esc(m.status) + '</span>' +
+        actions +
+        '</div>';
+    }).join("")
     : "(no members)";
   box.querySelectorAll("button").forEach(btn => btn.onclick = () => runMemberAction(btn.dataset.a, allMembers.find(x => x.id == btn.dataset.m)));
 }
