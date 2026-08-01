@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+import archive
 import dashboard
 
 load_dotenv()
@@ -18,6 +19,7 @@ bot = commands.Bot(command_prefix="?", intents=intents)
 
 
 async def setup_hook():
+    archive.init()
     for path in glob("commands/*"):
         if not os.path.isfile(path):
             continue
@@ -43,6 +45,17 @@ async def on_ready():
         print(f"Synced {len(synced)} command(s)")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
+
+
+@bot.event
+async def on_message(message):
+    archive.record_message(message)
+    await bot.process_commands(message)
+
+
+@bot.event
+async def on_message_delete(message):
+    archive.mark_deleted(message.id)
 
 
 @bot.event

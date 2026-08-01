@@ -12,6 +12,7 @@ import discord
 from aiohttp import web
 from discord.ext import commands
 
+import archive
 from commands.moderation import load_warnings
 
 STARTED = time.time()
@@ -174,6 +175,16 @@ def _guild(bot):
     return guild
 
 
+def _rank_for(role_ids):
+    if ADMIN_ROLE_ID in role_ids:
+        return "Admin"
+    if MOD_ROLE_ID in role_ids:
+        return "Mod"
+    if TRIAL_MOD_ROLE_ID in role_ids:
+        return "Trial Mod"
+    return None
+
+
 async def _guild_info(bot):
     try:
         guild = _guild(bot)
@@ -219,14 +230,7 @@ async def _list_members(bot):
         if any(role.id == HIDDEN_ROLE_ID for role in m.roles):
             continue
         role_ids = {role.id for role in m.roles}
-        if ADMIN_ROLE_ID in role_ids:
-            rank = "Admin"
-        elif MOD_ROLE_ID in role_ids:
-            rank = "Mod"
-        elif TRIAL_MOD_ROLE_ID in role_ids:
-            rank = "Trial Mod"
-        else:
-            rank = None
+        rank = _rank_for(role_ids)
         members.append(
             {
                 "id": m.id,
@@ -438,6 +442,109 @@ async def _api_members(request):
     )
 
 
+async def _api_user(request):
+    if not _authed(request):
+        return web.json_response({"ok": False, "error": "Unauthorized"}, status=401)
+    bot = request.app["bot"]
+    try:
+        user_id = int(request.query.get("user_id", 0))
+    except (TypeError, ValueError):
+        return web.json_response({"ok": False, "error": "Invalid user id."})
+    if not user_id:
+        return web.json_response({"ok": False, "error": "Missing user_id."})
+
+    try:
+        guild = _guild(bot)
+    except LookupError as e:
+        return web.json_response({"ok": False, "error": str(e)})
+
+    try:
+        user = await bot.fetch_user(user_id)
+    except discord.HTTPException:
+        return web.json_response({"ok": False, "error": "User not found."})
+
+    member = guild.get_member(user_id)
+    profile = {
+        "id": user.id,
+        "name": str(user),
+        "avatar": user.display_avatar.url,
+        "bot": user.bot,
+        "created": user.created_at.strftime("%Y-%m-%d"),
+    }
+
+    if member:
+        role_ids = {role.id for role in member.roles}
+        profile.update(
+            {
+                "nickname": member.nick,
+                "joined": member.joined_at.strftime("%Y-%m-%d"),
+                "status": str(member.status),
+                "rank": _rank_for(role_ids),
+                "owner": member.id == guild.owner_id,
+                "roles": [role.name for role in member.roles[1:]][::-1],
+            }
+        )
+    else:
+        profile.update(
+            {
+                "nickname": None,
+                "joined": None,
+                "status": "not in server",
+                "rank": None,
+                "owner": False,
+                "roles": [],
+            }
+        )
+
+    warnings_list = load_warnings().get(str(guild.id), {}).get(str(user_id), [])
+    warnings_out = [
+        {
+            "reason": w.get("reason", "?"),
+            "moderator": w.get("moderator", "?"),
+            "timestamp": w.get("timestamp", "?"),
+        }
+        for w in warnings_list
+    ]
+
+    stats = archive.user_stats(user_id, guild.id)
+    channel_names = {c.id: c.name for c in guild.channels}
+    messages_out = [
+        {
+            "channel": channel_names.get(channel_id, f"<{channel_id}>"),
+            "time": datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+            if ts
+            else "?",
+            "content": content,
+            "deleted": bool(deleted),
+        }
+        for (mid, channel_id, content, ts, deleted) in archive.user_messages(
+            user_id, guild.id, 100
+        )
+    ]
+
+    return web.json_response(
+        {
+            "ok": True,
+            "user": profile,
+            "warnings": warnings_out,
+            "stats": {
+                "messages": stats["count"],
+                "first": datetime.fromtimestamp(stats["first"]).strftime(
+                    "%Y-%m-%d"
+                )
+                if stats["first"]
+                else None,
+                "last": datetime.fromtimestamp(stats["last"]).strftime(
+                    "%Y-%m-%d %H:%M"
+                )
+                if stats["last"]
+                else None,
+            },
+            "messages": messages_out,
+        }
+    )
+
+
 async def _api_action(request):
     if not _authed(request):
         return web.json_response({"ok": False, "error": "Unauthorized"}, status=401)
@@ -503,6 +610,7 @@ async def start(bot):
     app.router.add_get("/api/server", _api_server)
     app.router.add_get("/api/bans", _api_bans)
     app.router.add_get("/api/members", _api_members)
+    app.router.add_get("/api/user", _api_user)
     app.router.add_post("/api/action", _api_action)
 
     runner = web.AppRunner(app)
@@ -582,6 +690,30 @@ label{display:block;font-size:12px;color:var(--muted);margin:14px 0 6px;text-tra
 pre{background:#0a0d12;border:1px solid var(--line);border-radius:8px;padding:14px;overflow:auto;max-height:420px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;white-space:pre-wrap}
 #login{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:50}
 #login.hidden{display:none}
+#modal{position:fixed;inset:0;z-index:40}
+#modal.hidden{display:none}
+.backdrop{position:absolute;inset:0;background:rgba(0,0,0,.6)}
+.panel{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(720px,92vw);max-height:88vh;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;overflow:auto}
+.mclose{position:absolute;top:10px;right:14px;background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;z-index:1}
+.mclose:hover{color:var(--text)}
+.phead{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+.phead img.avatar{width:64px;height:64px;border-radius:50%}
+.phead .pname{font-size:20px;font-weight:700}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.pgrid .card{padding:12px}
+.pgrid .card h3{font-size:11px;margin-bottom:4px}
+.pgrid .card .val{font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.psec h3{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:14px 0 8px}
+.pmsg{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#11151b;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px}
+.pmsg .pm-meta{color:var(--muted);font-size:11px;margin-bottom:2px}
+.pmsg.deleted{border-left:3px solid var(--err)}
+.pmsg .pm-d{display:inline-block;color:var(--err);font-weight:700;font-size:10px;margin-left:6px;letter-spacing:.5px}
+.pwarn{background:#221a12;border:1px solid var(--warn);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:13px}
+.pwarn .pm-meta{color:var(--muted);font-size:11px;margin-top:2px}
+.pwarn .mod{color:var(--acc)}
+.empty{color:var(--muted);font-size:13px}
+.clickable{cursor:pointer}
+.clickable:hover{text-decoration:underline}
 .loginbox{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:28px;width:320px}
 .loginbox h2{margin-bottom:6px}
 .loginbox p{color:var(--muted);font-size:13px;margin-bottom:18px}
@@ -591,6 +723,14 @@ pre{background:#0a0d12;border:1px solid var(--line);border-radius:8px;padding:14
 </style>
 </head>
 <body>
+<div id="modal" class="hidden">
+  <div class="backdrop" id="modalback"></div>
+  <div class="panel">
+    <button class="mclose" id="modclose">&times;</button>
+    <div id="modbody"><div class="idle">Loading...</div></div>
+  </div>
+</div>
+
 <div id="login">
   <div class="loginbox">
     <h2>Citadel</h2>
@@ -874,7 +1014,7 @@ function renderMembers() {
         ? '<button class="kick" data-m="' + m.id + '" data-a="kick">Kick</button><button class="warn" data-m="' + m.id + '" data-a="warn">Warn</button><button data-m="' + m.id + '" data-a="ban">Ban</button>'
         : "";
       return '<div class="row"><img class="avatar" src="' + esc(m.avatar) + '" alt="">' +
-        '<span>' + (m.bot ? '<span class="badge">BOT</span> ' : "") + esc(m.name) + '</span>' +
+        '<span class="clickable" data-u="' + m.id + '" title="View profile">' + (m.bot ? '<span class="badge">BOT</span> ' : "") + esc(m.name) + '</span>' +
         badge +
         '<span class="id">' + esc(String(m.id)) + '</span>' +
         (m.warnings ? '<span class="warncount">' + m.warnings + ' warn' + (m.warnings > 1 ? "s" : "") + '</span>' : "") +
@@ -884,7 +1024,59 @@ function renderMembers() {
     }).join("")
     : "(no members)";
   box.querySelectorAll("button").forEach(btn => btn.onclick = () => runMemberAction(btn.dataset.a, allMembers.find(x => x.id == btn.dataset.m)));
+  box.querySelectorAll(".clickable").forEach(el => el.onclick = () => openProfile(el.dataset.u));
 }
+
+function openProfile(userId) {
+  const modal = document.getElementById("modal");
+  const body = document.getElementById("modbody");
+  modal.classList.remove("hidden");
+  body.innerHTML = '<div class="idle">Loading...</div>';
+  api("/api/user?user_id=" + userId).then(d => {
+    if (!d.ok) { body.innerHTML = '<div class="idle">' + esc(d.error || "Error") + '</div>'; return; }
+    const u = d.user;
+    const badge = u.owner
+      ? '<span class="rankb rk-owner">OWNER</span> '
+      : u.rank === "Admin" ? '<span class="rankb rk-admin">ADMIN</span> '
+      : u.rank === "Mod" ? '<span class="rankb rk-mod">MOD</span> '
+      : u.rank === "Trial Mod" ? '<span class="rankb rk-trial">TRIAL MOD</span> '
+      : "";
+    const warns = d.warnings.length
+      ? d.warnings.map(w =>
+        '<div class="pwarn"><div>' + esc(w.reason) + '</div><div class="pm-meta">by <span class="mod">&lt;@' + esc(w.moderator) + '&gt;</span> · ' + esc(w.timestamp) + '</div></div>'
+      ).join("")
+      : '<div class="empty">No warnings.</div>';
+    const msgs = d.messages.length
+      ? d.messages.map(m =>
+        '<div class="pmsg' + (m.deleted ? " deleted" : "") + '"><div class="pm-meta">#' + esc(m.channel) + ' · ' + esc(m.time) + (m.deleted ? '<span class="pm-d">DELETED</span>' : "") + '</div>' + esc(m.content || "(empty)") + '</div>'
+      ).join("")
+      : '<div class="empty">No recorded messages.</div>';
+    const roles = u.roles && u.roles.length
+      ? u.roles.map(esc).join(", ")
+      : "none";
+    body.innerHTML =
+      '<div class="phead"><img class="avatar" src="' + esc(u.avatar) + '" alt=""><div><div class="pname">' + esc(u.name) + badge + '</div><div class="meta st-' + esc(u.status) + '">' + esc(u.status) + '</div></div></div>' +
+      '<div class="pgrid">' +
+        '<div class="card"><h3>User ID</h3><div class="val">' + esc(String(u.id)) + '</div></div>' +
+        '<div class="card"><h3>Account Created</h3><div class="val">' + esc(u.created) + '</div></div>' +
+        '<div class="card"><h3>Server Joined</h3><div class="val">' + esc(u.joined || "not in server") + '</div></div>' +
+        '<div class="card"><h3>Nickname</h3><div class="val">' + esc(u.nickname || "—") + '</div></div>' +
+        '<div class="card"><h3>Messages</h3><div class="val">' + d.stats.messages + '</div></div>' +
+        '<div class="card"><h3>First / Last Seen</h3><div class="val" style="font-size:11px">' + esc(d.stats.first || "—") + ' / ' + esc(d.stats.last || "—") + '</div></div>' +
+        '<div class="card"><h3>Roles</h3><div class="val" style="font-size:12px">' + roles + '</div></div>' +
+      '</div>' +
+      '<div class="psec"><h3>Warnings (' + d.warnings.length + ')</h3>' + warns + '</div>' +
+      '<div class="psec"><h3>Messages (last ' + d.messages.length + ')</h3>' + msgs + '</div>';
+  }).catch(() => {
+    body.innerHTML = '<div class="idle">Failed to load profile.</div>';
+  });
+}
+
+function closeModal() {
+  document.getElementById("modal").classList.add("hidden");
+}
+document.getElementById("modclose").onclick = closeModal;
+document.getElementById("modalback").onclick = closeModal;
 document.getElementById("memsearch").oninput = renderMembers;
 
 function showResult(ok, text) {

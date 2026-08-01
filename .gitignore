@@ -5,3 +5,4 @@ __pycache__/
 tournaments.json
 warnings.json
 honeypot.json
+messages.db
