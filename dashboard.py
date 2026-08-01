@@ -161,6 +161,7 @@ def _sysinfo():
 
 
 GUILD_ID = 1532560145895395398
+HIDDEN_ROLE_ID = 1532606512982261820
 
 
 def _guild(bot):
@@ -211,12 +212,15 @@ async def _list_members(bot):
     warnings_data = load_warnings().get(str(guild.id), {})
     members = []
     for m in guild.members:
+        if any(role.id == HIDDEN_ROLE_ID for role in m.roles):
+            continue
         members.append(
             {
                 "id": m.id,
                 "name": str(m),
                 "bot": m.bot,
                 "status": str(m.status),
+                "avatar": m.display_avatar.url,
                 "warnings": len(warnings_data.get(str(m.id), [])),
             }
         )
@@ -540,6 +544,8 @@ main{padding:20px 24px;max-width:1000px}
 .row button.warn{border-color:var(--acc);color:var(--acc)}
 .row button.warn:hover{background:var(--acc);color:#fff}
 .warncount{display:inline-block;background:#20242c;border:1px solid var(--line);color:var(--warn);border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600}
+.avatar{width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0}
+.st-online{color:var(--ok)} .st-idle{color:var(--warn)} .st-dnd{color:var(--err)} .st-offline{color:var(--muted)}
 .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid var(--line);color:var(--muted)}
 button.btn{background:var(--acc);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
 button.btn:hover{filter:brightness(1.1)}
@@ -832,10 +838,11 @@ function renderMembers() {
   const box = document.getElementById("memlist");
   box.innerHTML = list.length
     ? list.map(m =>
-      '<div class="row"><span>' + (m.bot ? '<span class="badge">BOT</span> ' : "") + esc(m.name) + '</span>' +
+      '<div class="row"><img class="avatar" src="' + esc(m.avatar) + '" alt="">' +
+      '<span>' + (m.bot ? '<span class="badge">BOT</span> ' : "") + esc(m.name) + '</span>' +
       '<span class="id">' + esc(String(m.id)) + '</span>' +
       (m.warnings ? '<span class="warncount">' + m.warnings + ' warn' + (m.warnings > 1 ? "s" : "") + '</span>' : "") +
-      '<span class="meta">' + esc(m.status) + '</span>' +
+      '<span class="meta st-' + esc(m.status) + '">' + esc(m.status) + '</span>' +
       (m.bot ? "" : '<button class="kick" data-m="' + m.id + '" data-a="kick">Kick</button><button class="warn" data-m="' + m.id + '" data-a="warn">Warn</button><button data-m="' + m.id + '" data-a="ban">Ban</button>') +
       '</div>'
     ).join("")
