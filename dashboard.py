@@ -458,12 +458,19 @@ async def _api_user(request):
     except LookupError as e:
         return web.json_response({"ok": False, "error": str(e)})
 
-    try:
-        user = await bot.fetch_user(user_id)
-    except discord.HTTPException:
-        return web.json_response({"ok": False, "error": "User not found."})
-
     member = guild.get_member(user_id)
+    if member is not None:
+        user = member
+    else:
+        user = bot.get_user(user_id)
+        if user is None:
+            try:
+                user = await bot.fetch_user(user_id)
+            except discord.HTTPException as e:
+                return web.json_response(
+                    {"ok": False, "error": f"User not found: {e}"}
+                )
+
     profile = {
         "id": user.id,
         "name": str(user),
