@@ -1,8 +1,13 @@
 import sqlite3
 import threading
 
+import discord
+
 DB_PATH = "messages.db"
 _lock = threading.Lock()
+
+RECORDED = 0
+LAST_ERROR = None
 
 
 def _conn():
@@ -36,8 +41,13 @@ def init():
 
 
 def record_message(message):
-    if not message.guild or message.author.bot or message.type != 0:
-        return
+    global RECORDED, LAST_ERROR
+    if (
+        not message.guild
+        or message.author.bot
+        or message.type != discord.MessageType.default
+    ):
+        return False
     try:
         content = message.content or ""
         with _lock:
@@ -62,11 +72,15 @@ def record_message(message):
                     )
             finally:
                 conn.close()
-    except Exception:
-        pass
+        RECORDED += 1
+        return True
+    except Exception as e:
+        LAST_ERROR = str(e)
+        return False
 
 
 def mark_deleted(message_id):
+    global LAST_ERROR
     try:
         with _lock:
             conn = _conn()
@@ -78,8 +92,8 @@ def mark_deleted(message_id):
                     )
             finally:
                 conn.close()
-    except Exception:
-        pass
+    except Exception as e:
+        LAST_ERROR = str(e)
 
 
 def user_messages(author_id, guild_id, limit=100):
@@ -115,3 +129,68 @@ def user_stats(author_id, guild_id):
         return {"count": row[0], "first": row[1], "last": row[2]}
     except Exception:
         return {"count": 0, "first": None, "last": None}
+
+
+def total_rows():
+    try:
+        with _lock:
+            conn = _conn()
+            try:
+                row = conn.execute("SELECT COUNT(*) FROM messages").fetchone()
+            finally:
+                conn.close()
+        return row[0]
+    except Exception:
+        return 0
+
+
+def newest_message_id(guild_id, channel_id):
+    try:
+        with _lock:
+            conn = _conn()
+            try:
+                row = conn.execute(
+                    "SELECT MAX(id) FROM messages "
+                    "WHERE guild_id = ? AND channel_id = ?",
+                    (guild_id, channel_id),
+                ).fetchone()
+            finally:
+                conn.close()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
+async def backfill(bot, guild_id, limit_per_channel=1000):
+    guild = bot.get_guild(guild_id)
+    if guild is None:
+        return 0
+    total = 0
+    channels = [
+        c
+        for c in guild.channels
+        if isinstance(c, (discord.TextChannel, discord.Thread))
+    ]
+    channels += [t for t in guild.threads if t not in channels]
+    for channel in channels:
+        newest = newest_message_id(guild_id, channel.id)
+        kwargs = {"limit": limit_per_channel}
+        if newest is not None:
+            kwargs["after"] = discord.Object(id=newest)
+        try:
+            async for message in channel.history(**kwargs):
+                if record_message(message):
+                    total += 1
+        except (discord.Forbidden, discord.NotFound):
+            continue
+        except Exception:
+            continue
+    return total
+
+
+def diagnostics():
+    return {
+        "recorded": RECORDED,
+        "rows": total_rows(),
+        "last_error": LAST_ERROR,
+    }

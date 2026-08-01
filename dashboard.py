@@ -358,6 +358,15 @@ def _exec_self():
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
+async def _run_backfill(bot):
+    try:
+        limit = int(os.getenv("ARCHIVE_BACKFILL_LIMIT", "1000"))
+    except ValueError:
+        limit = 1000
+    count = await archive.backfill(bot, GUILD_ID, limit)
+    print(f"Backfill complete: {count} message(s) recorded")
+
+
 async def _index(request):
     return web.Response(text=PAGE, content_type="text/html")
 
@@ -397,6 +406,7 @@ async def _api_status(request):
             "guilds": len(bot.guilds),
             "members": sum(g.member_count or 0 for g in bot.guilds),
             "cogs": sorted(bot.cogs.keys()),
+            "archive": archive.diagnostics(),
         }
     )
 
@@ -569,6 +579,11 @@ async def _api_action(request):
             )
         except Exception as e:
             return web.json_response({"ok": False, "error": str(e)})
+    if action == "backfill":
+        bot.loop.create_task(_run_backfill(bot))
+        return web.json_response(
+            {"ok": True, "message": "Backfill started — watch the Console tab."}
+        )
     if action == "run":
         result = await _run_command(bot, str(data.get("command", "")))
         return web.json_response(result)
@@ -777,6 +792,10 @@ pre{background:#0a0d12;border:1px solid var(--line);border-radius:8px;padding:14
       <div class="card"><h3>Uptime</h3><div class="num" id="uptime" style="font-size:20px">-</div></div>
     </div>
     <div class="card" style="margin-top:14px">
+      <h3>Message Archive <span id="archerr" style="color:var(--err)"></span></h3>
+      <div class="sub" id="archinfo">-</div>
+    </div>
+    <div class="card" style="margin-top:14px">
       <h3>Loaded Cogs</h3>
       <div id="coglist"></div>
     </div>
@@ -834,6 +853,7 @@ pre{background:#0a0d12;border:1px solid var(--line);border-radius:8px;padding:14
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button class="btn danger" id="btn-restart">Restart Bot</button>
         <button class="btn" id="btn-sync">Sync Slash Commands</button>
+        <button class="btn ghost" id="btn-backfill">Backfill Messages</button>
       </div>
       <label for="runinput">Run a command (as owner, in the configured channel)</label>
       <input type="text" id="runinput" placeholder="?ping">
@@ -905,6 +925,11 @@ async function loadStatus() {
     const cl = document.getElementById("coglist");
     cl.innerHTML = "";
     d.cogs.forEach(c => { const s = document.createElement("span"); s.textContent = c; cl.appendChild(s); });
+    if (d.archive) {
+      document.getElementById("archinfo").textContent =
+        d.archive.rows + " messages archived (" + d.archive.recorded + " recorded since start)";
+      document.getElementById("archerr").textContent = d.archive.last_error ? "last error: " + d.archive.last_error : "";
+    }
   } catch (e) {}
 }
 
@@ -1099,6 +1124,10 @@ document.getElementById("btn-restart").onclick = async () => {
 };
 document.getElementById("btn-sync").onclick = async () => {
   const d = await api("/api/action", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "sync"})});
+  showResult(d.ok, d.message || d.error);
+};
+document.getElementById("btn-backfill").onclick = async () => {
+  const d = await api("/api/action", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "backfill"})});
   showResult(d.ok, d.message || d.error);
 };
 document.getElementById("btn-run").onclick = async () => {

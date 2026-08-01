@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 import archive
 import dashboard
+from dashboard import GUILD_ID
 
 load_dotenv()
 
@@ -32,6 +33,17 @@ async def setup_hook():
         await bot.load_extension(f"commands.{name}")
         print(f"Loaded commands.{name}")
     await dashboard.start(bot)
+    bot.loop.create_task(backfill_on_start())
+
+
+async def backfill_on_start():
+    await bot.wait_until_ready()
+    try:
+        limit = int(os.getenv("ARCHIVE_BACKFILL_LIMIT", "1000"))
+    except ValueError:
+        limit = 1000
+    count = await archive.backfill(bot, GUILD_ID, limit)
+    print(f"Backfill complete: {count} message(s) recorded")
 
 
 bot.setup_hook = setup_hook
