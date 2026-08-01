@@ -718,22 +718,36 @@ pre{background:#0a0d12;border:1px solid var(--line);border-radius:8px;padding:14
 .panel{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(720px,92vw);max-height:88vh;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;overflow:auto}
 .mclose{position:absolute;top:10px;right:14px;background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;z-index:1}
 .mclose:hover{color:var(--text)}
-.phead{display:flex;align-items:center;gap:14px;margin-bottom:16px}
-.phead img.avatar{width:64px;height:64px;border-radius:50%}
-.phead .pname{font-size:20px;font-weight:700}
-.pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
-.pgrid .card{padding:12px}
+.phead{display:flex;align-items:center;gap:16px;margin-bottom:6px;padding-bottom:16px;border-bottom:1px solid var(--line)}
+.pavatar-wrap{position:relative;flex-shrink:0}
+.pavatar-wrap img.avatar{width:72px;height:72px;border-radius:50%;box-shadow:0 0 0 3px var(--line)}
+.pdot{position:absolute;bottom:2px;right:2px;width:16px;height:16px;border-radius:50%;border:3px solid var(--card)}
+.phead-info .pname{font-size:21px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.phead-info .pnick{color:var(--muted);font-size:13px;margin-top:2px}
+.phead-info .pid{color:var(--muted);font-size:12px;font-family:ui-monospace,Consolas,monospace;margin-top:4px}
+.ptabs{display:flex;gap:4px;margin:14px 0 12px;border-bottom:1px solid var(--line)}
+.ptabs button{background:none;border:none;color:var(--muted);padding:8px 14px;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.ptabs button.active{color:var(--text);border-bottom-color:var(--acc)}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.pgrid .card{padding:12px;margin:0}
 .pgrid .card h3{font-size:11px;margin-bottom:4px}
 .pgrid .card .val{font-size:14px;font-weight:600;overflow-wrap:anywhere}
 .psec h3{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:14px 0 8px}
-.pmsg{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#11151b;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px}
-.pmsg .pm-meta{color:var(--muted);font-size:11px;margin-bottom:2px}
-.pmsg.deleted{border-left:3px solid var(--err)}
-.pmsg .pm-d{display:inline-block;color:var(--err);font-weight:700;font-size:10px;margin-left:6px;letter-spacing:.5px}
-.pwarn{background:#221a12;border:1px solid var(--warn);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:13px}
-.pwarn .pm-meta{color:var(--muted);font-size:11px;margin-top:2px}
+.pdate{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin:16px 0 8px}
+.pdate::after{content:"";flex:1;height:1px;background:var(--line)}
+.pmsg{background:#11151b;border:1px solid var(--line);border-left:3px solid var(--acc);border-radius:10px;padding:9px 12px;margin-bottom:7px}
+.pmsg.deleted{border-left-color:var(--err);opacity:.75}
+.pmsg .pm-top{display:flex;align-items:center;gap:8px;margin-bottom:3px;flex-wrap:wrap}
+.pmsg .pm-ch{background:#20242c;border:1px solid var(--line);border-radius:999px;padding:1px 9px;font-size:11px;color:var(--text);font-weight:600}
+.pmsg .pm-t{color:var(--muted);font-size:11px}
+.pmsg .pm-d{color:var(--err);font-weight:700;font-size:10px;letter-spacing:.5px}
+.pmsg .pm-content{font-size:13.5px;line-height:1.5;overflow-wrap:anywhere}
+.pwarn{background:#221a12;border:1px solid var(--warn);border-left:3px solid var(--warn);border-radius:10px;padding:9px 12px;margin-bottom:7px;font-size:13.5px}
+.pwarn .pm-meta{color:var(--muted);font-size:11px;margin-top:3px}
 .pwarn .mod{color:var(--acc)}
-.empty{color:var(--muted);font-size:13px}
+.empty{color:var(--muted);font-size:13px;padding:8px 0}
+.pfilter{width:100%;background:#11151b;border:1px solid var(--line);color:var(--text);padding:9px 12px;border-radius:8px;font-size:13px;margin-bottom:10px;font-family:ui-monospace,Consolas,monospace}
+.pcount{color:var(--muted);font-size:12px;margin-left:auto}
 .clickable{cursor:pointer}
 .clickable:hover{text-decoration:underline}
 .loginbox{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:28px;width:320px}
@@ -1073,35 +1087,96 @@ function openProfile(userId) {
       : u.rank === "Mod" ? '<span class="rankb rk-mod">MOD</span> '
       : u.rank === "Trial Mod" ? '<span class="rankb rk-trial">TRIAL MOD</span> '
       : "";
-    const warns = d.warnings.length
-      ? d.warnings.map(w =>
-        '<div class="pwarn"><div>' + esc(w.reason) + '</div><div class="pm-meta">by <span class="mod">&lt;@' + esc(w.moderator) + '&gt;</span> · ' + esc(w.timestamp) + '</div></div>'
-      ).join("")
-      : '<div class="empty">No warnings.</div>';
-    const msgs = d.messages.length
-      ? d.messages.map(m =>
-        '<div class="pmsg' + (m.deleted ? " deleted" : "") + '"><div class="pm-meta">#' + esc(m.channel) + ' · ' + esc(m.time) + (m.deleted ? '<span class="pm-d">DELETED</span>' : "") + '</div>' + esc(m.content || "(empty)") + '</div>'
-      ).join("")
-      : '<div class="empty">No recorded messages.</div>';
-    const roles = u.roles && u.roles.length
-      ? u.roles.map(esc).join(", ")
-      : "none";
+    const roles = u.roles && u.roles.length ? u.roles.map(esc).join(", ") : "none";
+
     body.innerHTML =
-      '<div class="phead"><img class="avatar" src="' + esc(u.avatar) + '" alt=""><div><div class="pname">' + esc(u.name) + badge + '</div><div class="meta st-' + esc(u.status) + '">' + esc(u.status) + '</div></div></div>' +
-      '<div class="pgrid">' +
-        '<div class="card"><h3>User ID</h3><div class="val">' + esc(String(u.id)) + '</div></div>' +
-        '<div class="card"><h3>Account Created</h3><div class="val">' + esc(u.created) + '</div></div>' +
-        '<div class="card"><h3>Server Joined</h3><div class="val">' + esc(u.joined || "not in server") + '</div></div>' +
-        '<div class="card"><h3>Nickname</h3><div class="val">' + esc(u.nickname || "—") + '</div></div>' +
-        '<div class="card"><h3>Messages</h3><div class="val">' + d.stats.messages + '</div></div>' +
-        '<div class="card"><h3>First / Last Seen</h3><div class="val" style="font-size:11px">' + esc(d.stats.first || "—") + ' / ' + esc(d.stats.last || "—") + '</div></div>' +
-        '<div class="card"><h3>Roles</h3><div class="val" style="font-size:12px">' + roles + '</div></div>' +
+      '<div class="phead">' +
+        '<div class="pavatar-wrap"><img class="avatar" src="' + esc(u.avatar) + '" alt=""><span class="pdot st-' + esc(u.status) + '"></span></div>' +
+        '<div class="phead-info">' +
+          '<div class="pname">' + esc(u.name) + ' ' + badge + '</div>' +
+          (u.nickname ? '<div class="pnick">' + esc(u.nickname) + '</div>' : "") +
+          '<div class="pid">' + esc(String(u.id)) + ' · ' + esc(u.status) + '</div>' +
+        '</div>' +
       '</div>' +
-      '<div class="psec"><h3>Warnings (' + d.warnings.length + ')</h3>' + warns + '</div>' +
-      '<div class="psec"><h3>Messages (last ' + d.messages.length + ')</h3>' + msgs + '</div>';
+      '<div class="ptabs">' +
+        '<button data-p="info" class="active">Info</button>' +
+        '<button data-p="warn">Warnings (' + d.warnings.length + ')</button>' +
+        '<button data-p="msg">Messages (' + d.messages.length + ')</button>' +
+      '</div>' +
+      '<div id="ptab-body">' +
+        renderProfileInfo(u, d, roles) +
+      '</div>';
+
+    body.querySelectorAll(".ptabs button").forEach(btn => btn.onclick = () => {
+      body.querySelectorAll(".ptabs button").forEach(x => x.classList.remove("active"));
+      btn.classList.add("active");
+      const tab = document.getElementById("ptab-body");
+      if (btn.dataset.p === "info") tab.innerHTML = renderProfileInfo(u, d, roles);
+      if (btn.dataset.p === "warn") tab.innerHTML = renderProfileWarnings(d.warnings);
+      if (btn.dataset.p === "msg") tab.innerHTML = renderProfileMessages(d.messages);
+    });
   }).catch(() => {
     body.innerHTML = '<div class="idle">Failed to load profile.</div>';
   });
+}
+
+function renderProfileInfo(u, d, roles) {
+  return '<div class="pgrid">' +
+    '<div class="card"><h3>User ID</h3><div class="val">' + esc(String(u.id)) + '</div></div>' +
+    '<div class="card"><h3>Account Created</h3><div class="val">' + esc(u.created) + '</div></div>' +
+    '<div class="card"><h3>Server Joined</h3><div class="val">' + esc(u.joined || "not in server") + '</div></div>' +
+    '<div class="card"><h3>Messages</h3><div class="val">' + d.stats.messages + '</div></div>' +
+    '<div class="card"><h3>First Seen</h3><div class="val" style="font-size:12px">' + esc(d.stats.first || "—") + '</div></div>' +
+    '<div class="card"><h3>Last Seen</h3><div class="val" style="font-size:12px">' + esc(d.stats.last || "—") + '</div></div>' +
+    '<div class="card" style="grid-column:1/-1"><h3>Roles</h3><div class="val" style="font-size:12px;font-weight:400">' + roles + '</div></div>' +
+  '</div>';
+}
+
+function renderProfileWarnings(warnings) {
+  return warnings.length
+    ? warnings.map(w =>
+      '<div class="pwarn"><div>' + esc(w.reason) + '</div><div class="pm-meta">by <span class="mod">&lt;@' + esc(w.moderator) + '&gt;</span> · ' + esc(w.timestamp) + '</div></div>'
+    ).join("")
+    : '<div class="empty">No warnings.</div>';
+}
+
+function groupByDate(msgs) {
+  const groups = {};
+  msgs.forEach(m => {
+    const date = m.time.slice(0, 10);
+    (groups[date] = groups[date] || []).push(m);
+  });
+  return groups;
+}
+
+function renderProfileMessages(msgs) {
+  if (!msgs.length) return '<div class="empty">No recorded messages.</div>';
+  const groups = groupByDate(msgs);
+  let html = '<input type="text" class="pfilter" id="msgfilter" placeholder="Filter messages..." autocomplete="off">';
+  html += '<div id="msgwrap">' + dateGroupsHtml(groups, "") + '</div>';
+  setTimeout(() => {
+    const f = document.getElementById("msgfilter");
+    if (f) f.oninput = () => {
+      const q = f.value.toLowerCase();
+      const filtered = msgs.filter(m => !q || m.content.toLowerCase().includes(q));
+      document.getElementById("msgwrap").innerHTML = dateGroupsHtml(groupByDate(filtered), q);
+    };
+  }, 0);
+  return html;
+}
+
+function dateGroupsHtml(groups, q) {
+  return Object.keys(groups).map(date =>
+    '<div class="pdate">' + esc(date) + ' <span class="pcount">' + groups[date].length + '</span></div>' +
+    groups[date].map(m =>
+      '<div class="pmsg' + (m.deleted ? " deleted" : "") + '">' +
+        '<div class="pm-top"><span class="pm-ch">#' + esc(m.channel) + '</span>' +
+        '<span class="pm-t">' + esc(m.time.slice(11)) + '</span>' +
+        (m.deleted ? '<span class="pm-d">DELETED</span>' : "") + '</div>' +
+        '<div class="pm-content">' + esc(m.content || "(no text)") + '</div>' +
+      '</div>'
+    ).join("")
+  ).join("") || '<div class="empty">No matches' + (q ? " for &quot;" + esc(q) + "&quot;" : "") + '.</div>';
 }
 
 function closeModal() {
