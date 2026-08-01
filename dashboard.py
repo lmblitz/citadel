@@ -210,7 +210,7 @@ async def _list_bans(bot):
     async for entry in guild.bans(limit=None):
         bans.append(
             {
-                "id": entry.user.id,
+                "id": str(entry.user.id),
                 "name": str(entry.user),
                 "reason": entry.reason,
             }
@@ -233,7 +233,7 @@ async def _list_members(bot):
         rank = _rank_for(role_ids)
         members.append(
             {
-                "id": m.id,
+                "id": str(m.id),
                 "name": str(m),
                 "bot": m.bot,
                 "status": str(m.status),
@@ -472,7 +472,7 @@ async def _api_user(request):
                 )
 
     profile = {
-        "id": user.id,
+        "id": str(user.id),
         "name": str(user),
         "avatar": user.display_avatar.url,
         "bot": user.bot,
