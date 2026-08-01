@@ -12,6 +12,8 @@ import discord
 from aiohttp import web
 from discord.ext import commands
 
+from commands.moderation import load_warnings
+
 STARTED = time.time()
 
 LOGS = deque(maxlen=200)
@@ -206,16 +208,19 @@ async def _list_members(bot):
         guild = _guild(bot)
     except LookupError:
         return []
+    warnings_data = load_warnings().get(str(guild.id), {})
     members = []
-    async for m in guild.fetch_members(limit=None):
+    for m in guild.members:
         members.append(
             {
                 "id": m.id,
                 "name": str(m),
                 "bot": m.bot,
                 "status": str(m.status),
+                "warnings": len(warnings_data.get(str(m.id), [])),
             }
         )
+    members.sort(key=lambda m: m["name"].lower())
     return members
 
 
@@ -530,6 +535,11 @@ main{padding:20px 24px;max-width:1000px}
 .row .meta{color:var(--muted);font-size:12px;margin-left:auto;white-space:nowrap}
 .row button{background:transparent;border:1px solid var(--err);color:var(--err);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}
 .row button:hover{background:var(--err);color:#fff}
+.row button.kick{border-color:var(--warn);color:var(--warn)}
+.row button.kick:hover{background:var(--warn);color:#111}
+.row button.warn{border-color:var(--acc);color:var(--acc)}
+.row button.warn:hover{background:var(--acc);color:#fff}
+.warncount{display:inline-block;background:#20242c;border:1px solid var(--line);color:var(--warn);border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600}
 .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid var(--line);color:var(--muted)}
 button.btn{background:var(--acc);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
 button.btn:hover{filter:brightness(1.1)}
@@ -637,6 +647,7 @@ pre{background:#0a0d12;border:1px solid var(--line);border-radius:8px;padding:14
     <div class="card">
       <h3>Members <span id="memcount" style="color:var(--muted)"></span></h3>
       <input type="text" id="memsearch" placeholder="Filter..." style="margin-bottom:12px">
+      <div id="memresult"></div>
       <div id="memlist"></div>
     </div>
   </div>
@@ -799,14 +810,37 @@ async function loadMembers() {
   } catch (e) {}
 }
 
+function showMemResult(ok, text) {
+  const r = document.getElementById("memresult");
+  r.innerHTML = '<div class="row" style="border-left:3px solid ' + (ok ? "var(--ok)" : "var(--err)") + '">' + esc(text) + '</div>';
+  r.style.display = "block";
+}
+
+async function runMemberAction(action, member) {
+  const reason = prompt(action.toUpperCase() + " " + member.name + " — reason:");
+  if (reason === null) return;
+  showMemResult(true, action + "ing " + member.name + "...");
+  const d = await api("/api/action", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "run", command: "?" + action + " " + member.id + " " + reason})});
+  showMemResult(d.ok, (d.ok ? d.result : d.error) || "(no output)");
+  if (d.ok) { setTimeout(loadMembers, 1200); loadBans(); }
+}
+
 function renderMembers() {
   const q = document.getElementById("memsearch").value.toLowerCase();
   const list = allMembers.filter(m => !q || m.name.toLowerCase().includes(q));
   document.getElementById("memcount").textContent = list.length + " of " + allMembers.length;
   const box = document.getElementById("memlist");
   box.innerHTML = list.length
-    ? list.map(m => '<div class="row"><span>' + (m.bot ? '<span class="badge">BOT</span> ' : "") + esc(m.name) + '</span><span class="id">' + esc(String(m.id)) + '</span><span class="meta">' + esc(m.status) + '</span></div>').join("")
+    ? list.map(m =>
+      '<div class="row"><span>' + (m.bot ? '<span class="badge">BOT</span> ' : "") + esc(m.name) + '</span>' +
+      '<span class="id">' + esc(String(m.id)) + '</span>' +
+      (m.warnings ? '<span class="warncount">' + m.warnings + ' warn' + (m.warnings > 1 ? "s" : "") + '</span>' : "") +
+      '<span class="meta">' + esc(m.status) + '</span>' +
+      (m.bot ? "" : '<button class="kick" data-m="' + m.id + '" data-a="kick">Kick</button><button class="warn" data-m="' + m.id + '" data-a="warn">Warn</button><button data-m="' + m.id + '" data-a="ban">Ban</button>') +
+      '</div>'
+    ).join("")
     : "(no members)";
+  box.querySelectorAll("button").forEach(btn => btn.onclick = () => runMemberAction(btn.dataset.a, allMembers.find(x => x.id == btn.dataset.m)));
 }
 document.getElementById("memsearch").oninput = renderMembers;
 
